@@ -2,6 +2,7 @@ package com.portica.common.policy;
 
 import com.portica.common.policy.condition.ConditionParser;
 import com.portica.common.policy.condition.ConditionSyntaxException;
+import com.portica.common.policy.config.KeyValueMapOperationsConfig;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -89,6 +90,32 @@ public final class BundleValidator {
             if (p != null && PolicyType.fromTypeName(p.type()).orElse(null) == PolicyType.FLOW_CALLOUT
                     && p.config().get("sharedFlow") instanceof String name) {
                 result.add(name);
+            }
+        }
+        return result;
+    }
+
+    /** A key value map read by a KeyValueMapOperations policy. */
+    public record KvmReference(String scope, String name, Set<String> assignTo) {
+    }
+
+    /** Key value maps read by KeyValueMapOperations policies (enabled or not), with the variables they set. */
+    public static List<KvmReference> referencedKeyValueMaps(List<PolicyDefinition> policies) {
+        List<KvmReference> result = new ArrayList<>();
+        if (policies == null) {
+            return result;
+        }
+        for (PolicyDefinition p : policies) {
+            if (p == null || PolicyType.fromTypeName(p.type()).orElse(null) != PolicyType.KEY_VALUE_MAP_OPERATIONS) {
+                continue;
+            }
+            try {
+                var config = (KeyValueMapOperationsConfig) PolicyConfigBinder.bind(p);
+                Set<String> targets = new LinkedHashSet<>();
+                config.get().forEach(g -> targets.add(g.assignTo()));
+                result.add(new KvmReference(config.scope(), config.mapName(), targets));
+            } catch (PolicyConfigException e) {
+                // invalid configs are reported by validateProxy / validateSharedFlow
             }
         }
         return result;

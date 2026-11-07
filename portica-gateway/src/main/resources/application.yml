@@ -35,6 +35,8 @@ portica:
       max-request-body-bytes: 10485760
       max-response-body-bytes: 10485760
       trust-forwarded-for: false   # true only behind a load balancer that sets X-Forwarded-For
+    oauth:
+      token-ttl: 1h                # lifetime of access tokens from POST /{org}/{env}/oauth2/token
     auth:
       token-uri: ${PORTICA_OIDC_TOKEN_URI:http://localhost:8180/realms/portica/protocol/openid-connect/token}
       client-id: ${PORTICA_GATEWAY_CLIENT_ID:portica-gateway}

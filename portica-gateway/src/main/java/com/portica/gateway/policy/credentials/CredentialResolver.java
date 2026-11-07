@@ -1,13 +1,13 @@
 package com.portica.gateway.policy.credentials;
 
-import reactor.core.publisher.Mono;
+import java.util.Optional;
 
-/**
- * Looks up API keys. Phase 3 ships {@link ConfiguredCredentialResolver} (keys from gateway config,
- * for local development); Phase 4 adds a resolver backed by developer apps in the management plane.
- */
+/** Looks up app credentials by consumer key. Lookups are in memory (no I/O on the request path). */
 public interface CredentialResolver {
 
-    /** The app owning {@code apiKey} in {@code organization}, or empty when the key is unknown or revoked. */
-    Mono<AppCredential> resolveApiKey(String organization, String apiKey);
+    /**
+     * The app owning {@code consumerKey} in {@code organization}/{@code environment}, or empty when the key
+     * is unknown, revoked, its app is revoked or its developer inactive. Expiry is checked by the caller.
+     */
+    Optional<AppCredential> resolve(String organization, String environment, String consumerKey);
 }

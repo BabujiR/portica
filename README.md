@@ -3,10 +3,11 @@
 **The front door to your APIs.** A self-hosted, cloud-agnostic API management platform:
 High-level completeness without the cost or lock-in.
 
-> **Status: Phase 3 – Policy engine.** Organizations, environments, members and RBAC (Phase 1);
-> target servers, API proxies with immutable revisions, OpenAPI import and live deployments (Phase 2);
-> and a policy engine with PreFlow / conditional flows / PostFlow / FaultRules, shared flows and
-> 16 built-in policies, enforced by the gateway on every request (Phase 3).
+> **Status: Phase 4 – Products, developers and apps.** Organizations, environments, members and RBAC
+> (Phase 1); target servers, API proxies with immutable revisions, OpenAPI import and live deployments
+> (Phase 2); a policy engine with flows, fault rules, shared flows and 17 built-in policies (Phase 3);
+> and API products, developers, developer apps with key issuance, rotation and revocation, key value
+> maps, and an OAuth 2.0 client-credentials token endpoint enforced at the gateway (Phase 4).
 
 ---
 
@@ -197,10 +198,24 @@ mvn -pl portica-management spring-boot:run
 mvn -pl portica-gateway spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 
-The gateway needs Redis (Quota counters, response cache), which `docker compose up -d` starts. The
-`local` profile adds a development API key (`dev-acme-key-123` for org `acme`) for the VerifyAPIKey
-policy until developer apps arrive in Phase 4. In IntelliJ, set *Active profiles* to `local` in the
-gateway's run configuration.
+The gateway needs Redis (Quota counters, response cache, OAuth tokens), which `docker compose up -d`
+starts. The `local` profile adds a development API key (`dev-acme-key-123` for org `acme`) that opens
+every proxy of `acme`, handy before you've registered any apps. In IntelliJ, set *Active profiles* to
+`local` in the gateway's run configuration.
+
+Encrypted key value maps need an AES-256 key on the management API. `.env.example` has a development
+key; for `mvn spring-boot:run`, set it in the terminal (or in IntelliJ's run configuration under
+*Environment variables*) before starting the management API:
+
+```powershell
+$env:PORTICA_KVM_ENCRYPTION_KEY = "o1r8cXTayN7WvWNLZ8JMcwDzlrd05HPoHb9/reetxkQ="   # PowerShell
+```
+```bash
+export PORTICA_KVM_ENCRYPTION_KEY=o1r8cXTayN7WvWNLZ8JMcwDzlrd05HPoHb9/reetxkQ=   # bash
+```
+
+Use your own key anywhere but your laptop (`openssl rand -base64 32`), and keep it: changing it makes
+stored encrypted values unreadable.
 
 > **Windows PowerShell:** keep the quotes around `-D` arguments that contain dots. PowerShell splits
 > unquoted ones at the first dot, and Maven then fails with "Unknown lifecycle phase". Command Prompt,
@@ -347,10 +362,61 @@ curl -s -X POST $API/organizations/acme/environments/dev/sharedflows/security/re
 curl -s $API/policy-types -H "Authorization: Bearer $ALICE" | jq '.[] | {type, category}'
 ```
 
+### Phase 4: publish an API product and let an app call it
+
+```bash
+# 1. An API product: which proxies, which environments, scopes, quota
+curl -s -X POST $API/organizations/acme/apiproducts -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' \
+  -d '{"name":"echo-gold","proxies":["echo"],"environments":["dev"],"scopes":["echo.read"],
+       "quota":{"count":100,"interval":1,"timeUnit":"minute"}}' | jq
+
+# 2. A developer and an app; the response is the only time you see the consumer secret
+curl -s -X POST $API/organizations/acme/developers -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","firstName":"Ada","lastName":"Lovelace"}' | jq
+APP=$(curl -s -X POST $API/organizations/acme/developers/ada@example.com/apps -H "Authorization: Bearer $ALICE" \
+  -H 'Content-Type: application/json' -d '{"name":"mobile","apiProducts":["echo-gold"]}')
+KEY=$(echo "$APP" | jq -r .credential.consumerKey); SECRET=$(echo "$APP" | jq -r .credential.consumerSecret)
+KEY_ID=$(echo "$APP" | jq -r .credential.id)
+
+# 3. Protect the proxy: OAuthV2 (Portica tokens) + the product's quota, or VerifyAPIKey for plain keys
+cat > bundle4.json <<'EOF'
+{"basePath":"/echo","target":{"url":"http://localhost:8090/anything"},
+ "policies":[
+   {"name":"oauth","type":"OAuthV2","config":{"requiredScopes":["echo.read"]}},
+   {"name":"quota","type":"Quota","config":{"useProductQuota":true}},
+   {"name":"tag","type":"AssignMessage","config":{"setHeaders":{"X-App":"{oauthv2.oauth.app.name}"},
+                                                   "removeHeaders":["Authorization"]}}],
+ "flows":{"preFlow":{"request":[{"policy":"oauth"},{"policy":"quota"},{"policy":"tag"}]}}}
+EOF
+REV=$(curl -s -X POST $API/organizations/acme/apis/echo/revisions -H "Authorization: Bearer $ALICE" \
+  -H 'Content-Type: application/json' -d @bundle4.json | jq .revision)
+curl -s -X POST $API/organizations/acme/environments/dev/apis/echo/revisions/$REV/deployments -H "Authorization: Bearer $ALICE" | jq
+
+# 4. The app gets a token from the gateway (client credentials grant) and calls the API
+TOKEN=$(curl -s -u "$KEY:$SECRET" -d grant_type=client_credentials http://localhost:8081/acme/dev/oauth2/token | jq -r .access_token)
+curl -s http://localhost:8081/acme/dev/echo/pets -H "Authorization: Bearer $TOKEN" | jq .headers   # X-App: mobile
+curl -i http://localhost:8081/acme/dev/echo/pets -H "Authorization: Bearer nope"                 # 401 InvalidAccessToken
+
+# 5. Rotate the key (old one keeps working for an hour), then revoke it; the gateway stops it within ~5 s
+curl -s -X POST $API/organizations/acme/developers/ada@example.com/apps/mobile/keys/$KEY_ID/rotate \
+  -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' -d '{"graceSeconds":3600}' | jq
+curl -s -X PATCH $API/organizations/acme/developers/ada@example.com/apps/mobile/keys/$KEY_ID \
+  -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' -d '{"status":"REVOKED"}' | jq
+sleep 6; curl -i http://localhost:8081/acme/dev/echo/pets -H "Authorization: Bearer $TOKEN"     # 401: its key is revoked
+
+# 6. Key value maps: configuration and secrets for policies (encrypted values are never returned)
+curl -s -X POST $API/organizations/acme/environments/dev/keyvaluemaps -H "Authorization: Bearer $ALICE" \
+  -H 'Content-Type: application/json' -d '{"name":"backend","encrypted":true}' | jq
+curl -s -X PUT $API/organizations/acme/environments/dev/keyvaluemaps/backend/entries/api-token \
+  -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' -d '{"value":"s3cret"}' | jq   # value: *****
+# In a bundle: {"name":"secrets","type":"KeyValueMapOperations","config":{"mapName":"backend",
+#   "get":[{"key":"api-token","assignTo":"private.backend.token"}]}} then use {private.backend.token}
+```
+
 On Windows PowerShell, use the token snippet from the IntelliJ guide and `Invoke-RestMethod`, or run the
 commands above from Git Bash.
 
-## Policies (Phase 3)
+## Policies (Phases 3 and 4)
 
 ### How a request flows
 
@@ -382,13 +448,13 @@ flowchart LR
 
 | Policy | Category | What it does | Faults |
 |---|---|---|---|
-| `VerifyAPIKey` | Security | Validates an API key (default from `x-api-key`); sets `verifyapikey.<name>.client_id`, `.app.name`, `.developer.email`, `.apiproduct.name` | `FailedToResolveAPIKey`, `InvalidApiKey` (401) |
-| `OAuthV2` | Security | `VerifyAccessToken`: validates a bearer JWT against a JWKS (issuer, audiences, required scopes) | `MissingAccessToken`, `InvalidAccessToken` (401), `InsufficientScope` (403) |
+| `VerifyAPIKey` | Security | Validates an app's consumer key (default from `x-api-key`): approved app, active developer, not expired, and an approved API product that includes this proxy and path. Sets `verifyapikey.<name>.client_id`, `.app.name`, `.app.id`, `.developer.email`, `.apiproduct.name` and the shared app variables | `FailedToResolveAPIKey`, `InvalidApiKey`, `ApiKeyExpired` (401), `NoApiProductMatchFound` (403) |
+| `OAuthV2` | Security | `VerifyAccessToken`. Without `jwksUri`: Portica tokens from the gateway's token endpoint, re-checked against the app's credential and products on every call. With `jwksUri`: external JWTs (issuer, audiences). Optional `requiredScopes` | `MissingAccessToken`, `InvalidAccessToken` (401), `InsufficientScope`, `NoApiProductMatchFound` (403), `TokenStoreUnavailable` (503) |
 | `VerifyJWT` | Security | Verifies a JWT from any source; RS*/ES* via JWKS or HS* with a shared secret; issuer, audience, subject, claims | `JwtMissing`, `JwtInvalid` (401) |
 | `AccessControl` | Security | IP/CIDR allow and deny lists | `AccessDenied` (403) |
 | `RegularExpressionProtection` | Threat protection | Blocks requests whose path, query, headers or body match patterns | `ThreatDetected` (400) |
 | `JSONThreatProtection` | Threat protection | Limits depth, entries, array size, string and name length, body size | `JsonThreatDetected` (400) |
-| `Quota` | Traffic | Fixed-window counts per identifier, **shared by all gateways** (Redis); `RateLimit-*` headers | `QuotaViolation` (429), `QuotaUnavailable` (503) |
+| `Quota` | Traffic | Fixed-window counts per identifier, **shared by all gateways** (Redis); `RateLimit-*` headers. `useProductQuota: true` takes the limit from the API product that authorized the call, counted per app and product | `QuotaViolation` (429), `QuotaUnavailable` (503) |
 | `SpikeArrest` | Traffic | Token-bucket smoothing (`100ps`, `600pm`, with `burst`), per gateway instance | `SpikeArrestViolation` (429) |
 | `ResponseCache` | Traffic | Caches GET/HEAD responses in Redis; skips `private`/`no-store`/`Set-Cookie` | – |
 | `CORS` | Mediation | Answers preflight requests and adds CORS headers to every response, errors included | – |
@@ -397,6 +463,7 @@ flowchart LR
 | `RaiseFault` | Mediation | Raises a custom fault; inside a FaultRule, replaces the error response | configurable |
 | `ServiceCallout` | Extension | Calls another HTTP service; exposes `servicecallout.<name>.response.*` | `ServiceCalloutFailed` (502) |
 | `FlowCallout` | Extension | Runs a deployed shared flow | its policies' faults |
+| `KeyValueMapOperations` | Extension | Reads key value map entries (environment or organization scope) into variables; encrypted maps only into `private.*` variables | – |
 
 `GET /api/v1/policy-types` returns the same catalog with each policy's config fields. Unknown config
 fields are rejected, so typos fail at revision creation, not at runtime.
@@ -415,7 +482,9 @@ Variables: `organization.name`, `environment.name`, `apiproxy.name`, `apiproxy.r
 `proxy.pathsuffix`, `request.verb`, `request.uri`, `request.path`, `request.querystring`,
 `request.header.<name>`, `request.queryparam.<name>`, `request.content`, `client.ip`, `messageid`,
 `response.status.code`, `response.header.<name>`, `response.content`, `fault.name`, `fault.message`,
-`error.status.code`, `current.flow.name`, `system.timestamp`, plus those set by policies.
+`error.status.code`, `current.flow.name`, `system.timestamp`, plus those set by policies. After VerifyAPIKey or
+OAuthV2 (Portica tokens): `client_id`, `developer.app.name`, `developer.email`, `apiproduct.name`,
+`apiproduct.quota.limit` / `.interval` / `.timeunit` and `apiproduct.attribute.<name>`.
 
 ### Shared flows
 
@@ -423,6 +492,53 @@ A shared flow is a named list of steps with its own policies and immutable revis
 environment and called with `FlowCallout`. Deployment enforces order: a proxy or shared flow can only be
 deployed where every shared flow it calls is live, a shared flow can't be undeployed while something
 calls it, and call cycles are refused (the gateway also stops at 5 levels of nesting).
+
+## Products, developers and apps (Phase 4)
+
+```mermaid
+flowchart LR
+    P[API product<br/>proxies, paths, environments,<br/>scopes, quota] --- G{credential grant<br/>APPROVED / PENDING / REVOKED}
+    D[Developer<br/>ACTIVE / INACTIVE] --> A[App<br/>APPROVED / REVOKED]
+    A --> C[Credentials<br/>consumer key + secret,<br/>expiry, status]
+    C --- G
+    C -->|hashes, via the 5 s sync| GW[Gateway]
+    GW -->|VerifyAPIKey / token endpoint / OAuthV2| R[Request allowed<br/>if a granted product<br/>includes the proxy]
+```
+
+- **API products** bundle proxies (optionally only some paths, e.g. `/pets/**`) for some environments
+  (none listed means all), with the OAuth scopes apps can request and an optional quota. `approvalType`
+  `MANUAL` leaves new grants `PENDING` until an administrator approves them.
+- **Developers** are API consumers (not console users), identified by email per organization.
+  **Apps** belong to a developer and hold one or more **credentials**: a consumer key and secret, an
+  optional expiry, and the products granted to that credential.
+- **Issuance:** creating an app issues its first credential; `POST .../apps/{app}/keys` issues more.
+  The plain key and secret appear **only in that response** (`Cache-Control: no-store`); Portica stores
+  SHA-256 hashes and later shows the first 6 characters of the key.
+- **Rotation:** `POST .../keys/{id}/rotate` issues a new credential with the same products and lets the
+  old one expire after `graceSeconds` (default 1 day; 0 revokes it at once).
+- **Revocation:** revoke a key (`PATCH .../keys/{id}` with `status: REVOKED`), a product grant, the app
+  or the developer (`INACTIVE`). Gateways stop honouring it on their next sync, existing access tokens
+  included.
+
+### OAuth 2.0 client credentials
+
+Each gateway serves, for every environment it runs:
+
+| Endpoint | |
+|---|---|
+| `POST /{org}/{env}/oauth2/token` | RFC 6749 client credentials grant. Client authentication with HTTP Basic (`consumerKey:consumerSecret`) or `client_id`/`client_secret` form fields. Optional `scope` (must be within the app's products' scopes; default: all of them). Returns `{access_token, token_type: "Bearer", expires_in, scope}` |
+| `POST /{org}/{env}/oauth2/revoke` | RFC 7009 token revocation by the client that owns the token |
+
+Tokens are opaque random strings valid for `portica.gateway.oauth.token-ttl` (default 1 hour), stored as
+SHA-256 hashes in Redis, so any gateway instance can verify them. `/oauth2` is reserved: API proxies
+can't use it as a base path.
+
+### Key value maps
+
+Named key/value sets per environment or per organization, managed through the API and read by the
+`KeyValueMapOperations` policy at runtime. Encrypted maps store values with AES-256-GCM, never return
+them from the API (`*****`), and may only be assigned to `private.*` variables. Deploying a proxy or
+shared flow checks that the maps it reads exist.
 
 ## Management API (v1)
 
@@ -453,6 +569,14 @@ calls it, and call cycles are refused (the gateway also stops at 5 levels of nes
 | POST / DELETE | `/organizations/{org}/environments/{env}/sharedflows/{name}/revisions/{rev}/deployments` | `PROXY_DEPLOY` |
 | GET | `/organizations/{org}/environments/{env}/sharedflow-deployments` | `PROXY_READ` |
 | GET | `/policy-types` (policy catalog with config fields) | authenticated |
+| GET | `/organizations/{org}/apiproducts[/{name}]` | `PRODUCT_READ` |
+| POST / PUT / DELETE | `/organizations/{org}/apiproducts[/{name}]` | `PRODUCT_WRITE` |
+| GET | `/organizations/{org}/developers[/{email}]`, `.../{email}/apps[/{app}]`, `/organizations/{org}/apps` | `DEVELOPER_READ` |
+| POST / PATCH / DELETE | `/organizations/{org}/developers[/{email}]`, `.../{email}/apps[/{app}]` | `DEVELOPER_WRITE` |
+| GET | `.../apps/{app}/keys/{keyId}` | `DEVELOPER_READ` |
+| POST / PATCH / DELETE | `.../apps/{app}/keys[/{keyId}]`, `.../keys/{keyId}/rotate`, `.../keys/{keyId}/apiproducts[/{product}]` | `DEVELOPER_WRITE` |
+| GET | `/organizations/{org}[/environments/{env}]/keyvaluemaps[/{map}[/entries[/{key}]]]` | `PROXY_READ` |
+| POST / PUT / DELETE | `/organizations/{org}[/environments/{env}]/keyvaluemaps[/{map}[/entries/{key}]]` | `PROXY_WRITE` |
 | GET | `/internal/v1/runtime/environments`, `/internal/v1/runtime/organizations/{org}/environments/{env}` | `portica-runtime` realm role (gateways) |
 
 List endpoints take `page`, `size` (max 100), `sort` (allow-listed fields) and `q` (case-insensitive search)
@@ -587,14 +711,41 @@ cluster rate is `rate × replicas`.
 **CORS is a per-proxy policy.** WebFlux normally answers browser preflight requests itself before any
 gateway filter runs. Portica passes them through to the proxy's flows so each API controls its own CORS.
 
-**API keys are temporary in Phase 3.** VerifyAPIKey resolves keys through a `CredentialResolver`. Until
-developers, apps and API products arrive in Phase 4, keys come from configuration (the `local` profile),
-are stored hashed in memory, and never appear in logs.
+**Development keys.** The `local` profile's configured keys still work next to developer apps; they
+open every proxy of their organization and are meant only for a laptop.
 
 **ServiceCallout can reach any http(s) URL.** As with targets, add an outbound allow-list before letting
 less trusted users author bundles (SSRF).
 
-## Next: Phase 4
+### Phase 4
 
-Products, developers and apps: API products bundling proxies with quotas and scopes, developer and app
-registration, API key and OAuth client credentials issuance, and VerifyAPIKey/OAuthV2 backed by them.
+**Credentials travel with the environment snapshot.** Gateways receive every live credential of the
+organization (hashes only) with each environment's configuration, and check keys, tokens and product
+grants in memory. There is no call to the management plane on the request path, and gateways keep
+working when it is down. Any change to a product, developer, app, credential or organization-scoped key
+value map bumps the config version of every environment in the organization, so it reaches traffic
+within one sync interval (5 s by default). Expiry is also checked at request time, so a key that expires
+between syncs stops immediately. Trade-offs: snapshots grow with the number of credentials (fine for
+thousands; very large tenants will want an incremental credential feed later), and bursts of app changes
+can make concurrent deployments in that organization retry with a 409.
+
+**Hashes, not keys.** Consumer keys and secrets are 190+ bit random strings, so an unsalted SHA-256 is
+enough to make a leaked database or snapshot useless to an attacker, and lets the gateway look keys up
+directly. The price is that keys are shown only once; there is no "reveal key" button.
+
+**Opaque tokens, checked against live credentials.** Access tokens are random strings, not JWTs. Every
+call looks the token up in Redis and then re-checks its credential against the current snapshot, so
+revoking a key, app, product grant or developer also stops tokens already issued. JWT access tokens
+from an external authorization server are still supported (`OAuthV2` with `jwksUri`). The token endpoint
+has no per-client attempt limit yet, so rate-limit `/*/*/oauth2/*` at your load balancer for now.
+
+**Key value map secrets.** Encrypted maps are encrypted at rest with one AES-256 key from configuration
+(each value is bound to its map and key, so values can't be swapped between rows). Gateways receive the
+decrypted values over the authenticated runtime feed and keep them in memory only. Values assigned to
+`private.*` variables will be masked in trace sessions (Phase 6). A KMS-backed key and key rotation are
+planned for hardening.
+
+## Next: Phase 5
+
+The console: a React GUI for everything so far, including the flow designer for policies, API products,
+developers and apps with key management, and key value maps.

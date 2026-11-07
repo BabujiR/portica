@@ -70,6 +70,43 @@ class TrafficPoliciesTest {
         }
 
         @Test
+        void productQuotaIsCountedPerAppAndProduct() {
+            QuotaPolicy quota = new QuotaPolicy("quota",
+                    new QuotaConfig(null, null, null, null, null, null, null, true),
+                    new InMemoryCounterStore(clock), clock);
+
+            assertThat(run(quota, productCall("app-a", "gold", 2L, "minute"))).isNull();
+            assertThat(run(quota, productCall("app-a", "gold", 2L, "minute"))).isNull();
+            assertThat(run(quota, productCall("app-a", "gold", 2L, "minute")).faultName()).isEqualTo("QuotaViolation");
+            assertThat(run(quota, productCall("app-b", "gold", 2L, "minute"))).isNull(); // another app
+            assertThat(run(quota, productCall("app-a", "silver", 2L, "minute"))).isNull(); // another product
+        }
+
+        @Test
+        void productWithoutQuotaFallsBackToTheConfiguredCountOrNoLimit() {
+            QuotaPolicy fallback = new QuotaPolicy("q", new QuotaConfig(1L, null, null, null, null, null, null, true),
+                    new InMemoryCounterStore(clock), clock);
+            assertThat(run(fallback, productCall("app-a", "free", null, null))).isNull();
+            assertThat(run(fallback, productCall("app-a", "free", null, null))).isNotNull();
+
+            QuotaPolicy unlimited = new QuotaPolicy("q", new QuotaConfig(null, null, null, null, null, null, null, true),
+                    new InMemoryCounterStore(clock), clock);
+            for (int i = 0; i < 5; i++) {
+                assertThat(run(unlimited, productCall("app-a", "free", null, null))).isNull();
+            }
+        }
+
+        private MessageContext productCall(String clientId, String product, Long limit, String unit) {
+            MessageContext ctx = request("GET", "/").build();
+            ctx.setVariable("client_id", clientId);
+            ctx.setVariable("apiproduct.name", product);
+            ctx.setVariable("apiproduct.quota.limit", limit);
+            ctx.setVariable("apiproduct.quota.interval", limit == null ? null : 1);
+            ctx.setVariable("apiproduct.quota.timeunit", unit);
+            return ctx;
+        }
+
+        @Test
         void inMemoryCounterIsAtomicUnderConcurrency() {
             InMemoryCounterStore store = new InMemoryCounterStore();
             Long last = Flux.range(0, 1000).parallel(8).runOn(reactor.core.scheduler.Schedulers.parallel())

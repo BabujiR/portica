@@ -18,6 +18,8 @@ public interface EnvironmentRepository extends JpaRepository<Environment, UUID> 
 
     boolean existsByOrganization_IdAndName(UUID organizationId, String name);
 
+    List<Environment> findByOrganization_Id(UUID organizationId);
+
     /** Rows of [organization name, environment name, config version] for the gateway runtime index. */
     @Query("""
             select o.name, e.name, e.configVersion

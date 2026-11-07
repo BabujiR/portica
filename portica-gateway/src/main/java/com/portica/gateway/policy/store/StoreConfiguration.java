@@ -1,5 +1,8 @@
 package com.portica.gateway.policy.store;
 
+import com.portica.gateway.oauth.AccessTokenStore;
+import com.portica.gateway.oauth.InMemoryAccessTokenStore;
+import com.portica.gateway.oauth.RedisAccessTokenStore;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +29,11 @@ public class StoreConfiguration {
         CacheStore cacheStore(ReactiveStringRedisTemplate redis) {
             return new RedisCacheStore(redis);
         }
+
+        @Bean
+        AccessTokenStore accessTokenStore(ReactiveStringRedisTemplate redis) {
+            return new RedisAccessTokenStore(redis);
+        }
     }
 
     @Configuration
@@ -34,7 +42,7 @@ public class StoreConfiguration {
 
         Memory() {
             LoggerFactory.getLogger(StoreConfiguration.class)
-                    .warn("Using in-memory quota counters and cache: limits are per gateway instance");
+                    .warn("Using in-memory quota counters, cache and OAuth tokens: state is per gateway instance");
         }
 
         @Bean
@@ -45,6 +53,11 @@ public class StoreConfiguration {
         @Bean
         CacheStore cacheStore() {
             return new InMemoryCacheStore();
+        }
+
+        @Bean
+        AccessTokenStore accessTokenStore() {
+            return new InMemoryAccessTokenStore();
         }
     }
 }

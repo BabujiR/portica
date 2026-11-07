@@ -107,6 +107,7 @@ services:
       PORTICA_DB_PASSWORD: ${PORTICA_DB_PASSWORD:-portica}
       PORTICA_OIDC_ISSUER: http://localhost:8180/realms/portica
       PORTICA_OIDC_JWKS: http://keycloak:8080/realms/portica/protocol/openid-connect/certs
+      PORTICA_KVM_ENCRYPTION_KEY: ${PORTICA_KVM_ENCRYPTION_KEY:-o1r8cXTayN7WvWNLZ8JMcwDzlrd05HPoHb9/reetxkQ=}
     ports:
       - "8080:8080"
 
