@@ -1,0 +1,94 @@
+package com.portica.management.runtime;
+
+import com.portica.common.error.ResourceNotFoundException;
+import com.portica.management.deployment.Deployment;
+import com.portica.management.deployment.DeploymentRepository;
+import com.portica.management.environment.Environment;
+import com.portica.management.environment.EnvironmentFinder;
+import com.portica.management.environment.EnvironmentRepository;
+import com.portica.management.organization.OrganizationStatus;
+import com.portica.management.proxy.ApiProxyRevision;
+import com.portica.management.proxy.TargetSpec;
+import com.portica.management.runtime.RuntimeDtos.EnvironmentVersion;
+import com.portica.management.runtime.RuntimeDtos.RuntimeEnvironmentConfig;
+import com.portica.management.runtime.RuntimeDtos.RuntimeIndex;
+import com.portica.management.runtime.RuntimeDtos.RuntimeProxy;
+import com.portica.management.targetserver.TargetServer;
+import com.portica.management.targetserver.TargetServerRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * Builds the read-only runtime view gateways consume. Target servers are resolved here, so a
+ * gateway only ever deals with concrete URIs.
+ */
+@Service
+public class RuntimeConfigService {
+
+    private static final Logger log = LoggerFactory.getLogger(RuntimeConfigService.class);
+
+    private final EnvironmentRepository environmentRepository;
+    private final EnvironmentFinder environments;
+    private final DeploymentRepository deployments;
+    private final TargetServerRepository targetServers;
+
+    public RuntimeConfigService(EnvironmentRepository environmentRepository, EnvironmentFinder environments,
+                                DeploymentRepository deployments, TargetServerRepository targetServers) {
+        this.environmentRepository = environmentRepository;
+        this.environments = environments;
+        this.deployments = deployments;
+        this.targetServers = targetServers;
+    }
+
+    @Transactional(readOnly = true)
+    public RuntimeIndex index() {
+        List<EnvironmentVersion> versions = environmentRepository.findRuntimeVersions(OrganizationStatus.ACTIVE).stream()
+                .map(row -> new EnvironmentVersion((String) row[0], (String) row[1], ((Number) row[2]).longValue()))
+                .toList();
+        return new RuntimeIndex(Instant.now(), versions);
+    }
+
+    /** Consistent snapshot: version, deployments and target servers are read in one repeatable-read transaction. */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public RuntimeEnvironmentConfig snapshot(String org, String env) {
+        Environment environment;
+        try {
+            environment = environments.get(org, env);
+        } catch (ResourceNotFoundException e) {
+            throw new ResourceNotFoundException("Runtime environment", org + "/" + env);
+        }
+        Map<String, TargetServer> servers = targetServers.findByEnvironment_Id(environment.getId()).stream()
+                .collect(Collectors.toMap(TargetServer::getName, Function.identity()));
+
+        List<RuntimeProxy> proxies = new ArrayList<>();
+        for (Deployment deployment : deployments.findLive(environment.getId())) {
+            ApiProxyRevision revision = deployment.getRevision();
+            TargetSpec target = revision.target();
+            String targetUri = target.url();
+            if (target.usesServer()) {
+                TargetServer server = servers.get(target.server());
+                if (server == null || !server.isEnabled()) {
+                    // Deploy-time checks prevent this; skip rather than route to an unknown host.
+                    log.warn("Skipping {} r{} in {}/{}: target server '{}' missing or disabled",
+                            deployment.getApiProxy().getName(), revision.getRevision(), org, env, target.server());
+                    continue;
+                }
+                targetUri = server.baseUri();
+            }
+            proxies.add(new RuntimeProxy(deployment.getApiProxy().getName(), revision.getRevision(),
+                    revision.getBasePath(), targetUri, target.path(), revision.getConnectTimeoutMs(),
+                    revision.getReadTimeoutMs()));
+        }
+        return new RuntimeEnvironmentConfig(org, env, environment.getConfigVersion(), Instant.now(), proxies);
+    }
+}
