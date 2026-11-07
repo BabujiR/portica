@@ -13,6 +13,8 @@ import com.portica.management.runtime.RuntimeDtos.EnvironmentVersion;
 import com.portica.management.runtime.RuntimeDtos.RuntimeEnvironmentConfig;
 import com.portica.management.runtime.RuntimeDtos.RuntimeIndex;
 import com.portica.management.runtime.RuntimeDtos.RuntimeProxy;
+import com.portica.management.runtime.RuntimeDtos.RuntimeSharedFlow;
+import com.portica.management.sharedflow.SharedFlowDeploymentRepository;
 import com.portica.management.targetserver.TargetServer;
 import com.portica.management.targetserver.TargetServerRepository;
 import org.slf4j.Logger;
@@ -41,13 +43,16 @@ public class RuntimeConfigService {
     private final EnvironmentFinder environments;
     private final DeploymentRepository deployments;
     private final TargetServerRepository targetServers;
+    private final SharedFlowDeploymentRepository sharedFlowDeployments;
 
     public RuntimeConfigService(EnvironmentRepository environmentRepository, EnvironmentFinder environments,
-                                DeploymentRepository deployments, TargetServerRepository targetServers) {
+                                DeploymentRepository deployments, TargetServerRepository targetServers,
+                                SharedFlowDeploymentRepository sharedFlowDeployments) {
         this.environmentRepository = environmentRepository;
         this.environments = environments;
         this.deployments = deployments;
         this.targetServers = targetServers;
+        this.sharedFlowDeployments = sharedFlowDeployments;
     }
 
     @Transactional(readOnly = true)
@@ -87,8 +92,13 @@ public class RuntimeConfigService {
             }
             proxies.add(new RuntimeProxy(deployment.getApiProxy().getName(), revision.getRevision(),
                     revision.getBasePath(), targetUri, target.path(), revision.getConnectTimeoutMs(),
-                    revision.getReadTimeoutMs()));
+                    revision.getReadTimeoutMs(), revision.policies(), revision.flows()));
         }
-        return new RuntimeEnvironmentConfig(org, env, environment.getConfigVersion(), Instant.now(), proxies);
+        List<RuntimeSharedFlow> sharedFlows = sharedFlowDeployments.findLive(environment.getId()).stream()
+                .map(d -> new RuntimeSharedFlow(d.getSharedFlow().getName(), d.getRevision().getRevision(),
+                        d.getRevision().policies(), d.getRevision().steps()))
+                .toList();
+        return new RuntimeEnvironmentConfig(org, env, environment.getConfigVersion(), Instant.now(), proxies,
+                sharedFlows);
     }
 }

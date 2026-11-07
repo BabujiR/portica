@@ -117,10 +117,13 @@ services:
     image: portica/portica-gateway:local
     depends_on:
       - management
+      - redis
     environment:
       PORTICA_MANAGEMENT_URL: http://management:8080
       PORTICA_OIDC_TOKEN_URI: http://keycloak:8080/realms/portica/protocol/openid-connect/token
       PORTICA_GATEWAY_CLIENT_SECRET: ${PORTICA_GATEWAY_CLIENT_SECRET:-portica-gateway-dev-secret}
+      PORTICA_REDIS_HOST: redis
+      SPRING_PROFILES_ACTIVE: local   # loads the development API keys (application-local.yml)
     ports:
       - "8081:8081"
 

@@ -5,6 +5,11 @@ server:
 spring:
   application:
     name: portica-gateway
+  data:
+    redis:
+      host: ${PORTICA_REDIS_HOST:localhost}
+      port: ${PORTICA_REDIS_PORT:6379}
+      timeout: 2s
   cloud:
     gateway:
       metrics:
@@ -25,6 +30,11 @@ portica:
       enabled: true
       poll-interval: 5s
       timeout: 10s
+    policy:
+      store: redis                 # redis (shared by all instances) or memory (single instance)
+      max-request-body-bytes: 10485760
+      max-response-body-bytes: 10485760
+      trust-forwarded-for: false   # true only behind a load balancer that sets X-Forwarded-For
     auth:
       token-uri: ${PORTICA_OIDC_TOKEN_URI:http://localhost:8180/realms/portica/protocol/openid-connect/token}
       client-id: ${PORTICA_GATEWAY_CLIENT_ID:portica-gateway}
