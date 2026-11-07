@@ -1,7 +1,8 @@
 # Local development profile: run the gateway with --spring.profiles.active=local
 # (IntelliJ: Run configuration > Active profiles: local).
 #
-# Development API keys for the VerifyAPIKey policy, until developer apps arrive in Phase 4.
+# Development API keys for the VerifyAPIKey policy. They work alongside developer apps (Phase 4) and
+# open every API proxy of their organization. Real apps get keys from the management API instead.
 # Never use this file in a shared environment: the keys are plain text.
 portica:
   gateway:

@@ -11,6 +11,7 @@ import com.portica.management.deployment.Deployment;
 import com.portica.management.deployment.DeploymentRepository;
 import com.portica.management.environment.Environment;
 import com.portica.management.environment.EnvironmentFinder;
+import com.portica.management.kvm.KeyValueMapService;
 import com.portica.management.organization.Organization;
 import com.portica.management.organization.OrganizationFinder;
 import com.portica.management.proxy.InvalidBundleException;
@@ -48,17 +49,20 @@ public class SharedFlowService {
     private final DeploymentRepository proxyDeployments;
     private final OrganizationFinder organizations;
     private final EnvironmentFinder environments;
+    private final KeyValueMapService keyValueMaps;
     private final AuditService audit;
 
     public SharedFlowService(SharedFlowRepository flows, SharedFlowRevisionRepository revisions,
                              SharedFlowDeploymentRepository flowDeployments, DeploymentRepository proxyDeployments,
-                             OrganizationFinder organizations, EnvironmentFinder environments, AuditService audit) {
+                             OrganizationFinder organizations, EnvironmentFinder environments,
+                             KeyValueMapService keyValueMaps, AuditService audit) {
         this.flows = flows;
         this.revisions = revisions;
         this.flowDeployments = flowDeployments;
         this.proxyDeployments = proxyDeployments;
         this.organizations = organizations;
         this.environments = environments;
+        this.keyValueMaps = keyValueMaps;
         this.audit = audit;
     }
 
@@ -146,6 +150,7 @@ public class SharedFlowService {
         graph.put(name, callees);
         requireDeployed(environment, callees, name);
         requireNoCycle(graph, name);
+        keyValueMaps.requireUsable(environment, BundleValidator.referencedKeyValueMaps(revision.policies()));
 
         SharedFlowDeployment current = flowDeployments.findByEnvironment_IdAndSharedFlow_Id(environment.getId(), flow.getId())
                 .orElse(null);

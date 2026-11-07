@@ -1,5 +1,7 @@
 package com.portica.gateway.runtime;
 
+import com.portica.gateway.policy.credentials.CredentialRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.portica.gateway.policy.engine.CompiledEnvironment;
 import com.portica.gateway.policy.engine.CompiledProxy;
 import com.portica.gateway.policy.engine.ProxyBundleCompiler;
@@ -32,14 +34,23 @@ public class RuntimeConfigRegistry {
 
     private final ApplicationEventPublisher events;
     private final ProxyBundleCompiler compiler;
+    private final CredentialRegistry credentials;
     private final Map<String, RuntimeEnvironmentConfig> environments = new TreeMap<>();
     private final Map<String, CompiledEnvironment> compiledEnvironments = new HashMap<>();
     private volatile List<RouteDefinition> routes = List.of();
     private volatile Map<String, CompiledProxy> compiledProxies = Map.of();
 
-    public RuntimeConfigRegistry(ApplicationEventPublisher events, ProxyBundleCompiler compiler) {
+    @Autowired
+    public RuntimeConfigRegistry(ApplicationEventPublisher events, ProxyBundleCompiler compiler,
+                                 CredentialRegistry credentials) {
         this.events = events;
         this.compiler = compiler;
+        this.credentials = credentials;
+    }
+
+    /** With a private credential registry (tests). */
+    public RuntimeConfigRegistry(ApplicationEventPublisher events, ProxyBundleCompiler compiler) {
+        this(events, compiler, new CredentialRegistry());
     }
 
     /** Adds or replaces one environment's configuration. */
@@ -50,11 +61,14 @@ public class RuntimeConfigRegistry {
                 return;
             }
             CompiledEnvironment compiled = compiler.compile(config);
+            // Credentials first: a newly routed proxy must never see an older credential set.
+            credentials.update(config);
             environments.put(config.key(), config);
             compiledEnvironments.put(config.key(), compiled);
-            log.info("Applied {} config version {} ({} of {} proxies compiled, {} shared flows)", config.key(),
-                    config.configVersion(), compiled.proxies().size(), config.proxies().size(),
-                    config.sharedFlows().size());
+            log.info("Applied {} config version {} ({} of {} proxies compiled, {} shared flows, {} products, "
+                            + "{} credentials, {} key value maps)", config.key(), config.configVersion(),
+                    compiled.proxies().size(), config.proxies().size(), config.sharedFlows().size(),
+                    config.apiProducts().size(), config.credentials().size(), config.keyValueMaps().size());
             rebuild();
         }
     }
@@ -66,6 +80,7 @@ public class RuntimeConfigRegistry {
             for (String key : keys) {
                 if (environments.remove(key) != null) {
                     compiledEnvironments.remove(key);
+                    credentials.remove(key);
                     log.info("Removed environment {}", key);
                     changed = true;
                 }

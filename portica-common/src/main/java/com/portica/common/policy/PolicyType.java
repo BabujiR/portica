@@ -6,6 +6,7 @@ import com.portica.common.policy.config.CorsConfig;
 import com.portica.common.policy.config.FlowCalloutConfig;
 import com.portica.common.policy.config.JsonThreatProtectionConfig;
 import com.portica.common.policy.config.JsonToXmlConfig;
+import com.portica.common.policy.config.KeyValueMapOperationsConfig;
 import com.portica.common.policy.config.OAuthV2Config;
 import com.portica.common.policy.config.PolicyConfig;
 import com.portica.common.policy.config.QuotaConfig;
@@ -27,7 +28,7 @@ public enum PolicyType {
     VERIFY_API_KEY("VerifyAPIKey", "Security", VerifyApiKeyConfig.class,
             "Requires a valid API key and exposes the calling app in variables."),
     OAUTH_V2("OAuthV2", "Security", OAuthV2Config.class,
-            "Requires a valid OAuth 2.0 bearer access token (JWT) and optional scopes."),
+            "Requires a valid OAuth 2.0 bearer access token (Portica-issued or external JWT) and optional scopes."),
     VERIFY_JWT("VerifyJWT", "Security", VerifyJwtConfig.class,
             "Verifies a signed JWT's signature and claims."),
     ACCESS_CONTROL("AccessControl", "Security", AccessControlConfig.class,
@@ -55,7 +56,9 @@ public enum PolicyType {
     SERVICE_CALLOUT("ServiceCallout", "Extension", ServiceCalloutConfig.class,
             "Calls another HTTP service and stores its response in variables."),
     FLOW_CALLOUT("FlowCallout", "Extension", FlowCalloutConfig.class,
-            "Runs a shared flow deployed in the same environment.");
+            "Runs a shared flow deployed in the same environment."),
+    KEY_VALUE_MAP_OPERATIONS("KeyValueMapOperations", "Extension", KeyValueMapOperationsConfig.class,
+            "Reads configuration or secrets from a key value map into variables.");
 
     private final String typeName;
     private final String category;

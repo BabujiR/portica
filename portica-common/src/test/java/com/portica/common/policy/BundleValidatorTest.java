@@ -91,4 +91,26 @@ class BundleValidatorTest {
         assertThat(BundleJson.readFlows(BundleJson.writeFlows(flows))).isEqualTo(flows);
         assertThat(BundleJson.readFlows("{}")).isEqualTo(ProxyFlows.EMPTY);
     }
+
+    @Test
+    void keyValueMapReferencesAreCollected() {
+        List<PolicyDefinition> policies = List.of(
+                new PolicyDefinition("kvm", "KeyValueMapOperations", null, null, Map.of("mapName", "secrets",
+                        "scope", "organization", "get", List.of(Map.of("key", "t", "assignTo", "private.t")))),
+                new PolicyDefinition("broken", "KeyValueMapOperations", null, null, Map.of("nope", 1)),
+                new PolicyDefinition("q", "Quota", null, null, Map.of("count", 5)));
+
+        assertThat(BundleValidator.referencedKeyValueMaps(policies))
+                .containsExactly(new BundleValidator.KvmReference("organization", "secrets", java.util.Set.of("private.t")));
+    }
+
+    @Test
+    void phase4ConfigOptionsValidate() {
+        assertThat(new QuotaConfig(null, null, null, null, null, null, null, true).validate()).isEmpty();
+        assertThat(new QuotaConfig(null, null, null, null, null, null, null, false).validate()).isNotEmpty();
+        assertThat(new com.portica.common.policy.config.OAuthV2Config(null, null, null, null, List.of("pets.read"), null)
+                .validate()).isEmpty();
+        assertThat(new com.portica.common.policy.config.OAuthV2Config(null, null, "https://issuer", null, null, null)
+                .validate()).isNotEmpty(); // issuer only makes sense for external tokens
+    }
 }

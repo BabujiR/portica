@@ -84,6 +84,11 @@ portica:
       - http://localhost:5173
   organizations:
     default-environments: [dev, test, prod]
+  kvm:
+    # AES-256 key (base64 of 32 random bytes: openssl rand -base64 32) for encrypted key value maps.
+    # Without it, encrypted maps can't be created. Keep it secret and stable: changing it makes
+    # existing encrypted values unreadable.
+    encryption-key: ${PORTICA_KVM_ENCRYPTION_KEY:}
 
 logging:
   pattern:

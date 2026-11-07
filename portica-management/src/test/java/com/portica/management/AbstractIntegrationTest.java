@@ -31,7 +31,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @SpringBootTest(properties = {
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=http://keycloak.test/realms/portica",
-        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://keycloak.test/realms/portica/protocol/openid-connect/certs"
+        "spring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://keycloak.test/realms/portica/protocol/openid-connect/certs",
+        // test-only AES-256 key for encrypted key value maps
+        "portica.kvm.encryption-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 })
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)

@@ -1,5 +1,6 @@
 package com.portica.management.proxy;
 
+import com.portica.common.http.PorticaPaths;
 import com.portica.common.error.BusinessRuleViolationException;
 import com.portica.common.policy.BundleValidator;
 import com.portica.common.policy.PolicyDefinition;
@@ -194,6 +195,10 @@ public class ApiProxyService {
     // ----------------------------------------------------------------- helpers
 
     private ApiProxyRevision addRevision(ApiProxy proxy, CreateRevisionRequest request) {
+        if (PorticaPaths.isReserved(request.basePath())) {
+            throw new InvalidRequestException("Base path '%s' is reserved for the gateway's OAuth endpoints"
+                    .formatted(request.basePath()));
+        }
         TargetSpec target = TargetSpec.of(request.target().url(), request.target().server(), request.target().path());
         if (request.openApiSpec() != null && !request.openApiSpec().isBlank()) {
             openApiParser.parse(request.openApiSpec()); // reject invalid specs up front

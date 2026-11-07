@@ -13,7 +13,19 @@ import com.portica.management.runtime.RuntimeDtos.EnvironmentVersion;
 import com.portica.management.runtime.RuntimeDtos.RuntimeEnvironmentConfig;
 import com.portica.management.runtime.RuntimeDtos.RuntimeIndex;
 import com.portica.management.runtime.RuntimeDtos.RuntimeProxy;
+import com.portica.management.runtime.RuntimeDtos.RuntimeApiProduct;
+import com.portica.management.runtime.RuntimeDtos.RuntimeCredential;
+import com.portica.management.runtime.RuntimeDtos.RuntimeKeyValueMap;
+import com.portica.management.runtime.RuntimeDtos.RuntimeQuota;
 import com.portica.management.runtime.RuntimeDtos.RuntimeSharedFlow;
+import com.portica.management.developer.AppCredential;
+import com.portica.management.developer.AppCredentialRepository;
+import com.portica.management.developer.DeveloperApp;
+import com.portica.management.developer.ProductGrantStatus;
+import com.portica.management.kvm.KeyValueMapService;
+import com.portica.management.product.ApiProduct;
+import com.portica.management.product.ApiProductRepository;
+import com.portica.management.product.ProductQuota;
 import com.portica.management.sharedflow.SharedFlowDeploymentRepository;
 import com.portica.management.targetserver.TargetServer;
 import com.portica.management.targetserver.TargetServerRepository;
@@ -27,6 +39,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -44,15 +57,22 @@ public class RuntimeConfigService {
     private final DeploymentRepository deployments;
     private final TargetServerRepository targetServers;
     private final SharedFlowDeploymentRepository sharedFlowDeployments;
+    private final ApiProductRepository products;
+    private final AppCredentialRepository credentials;
+    private final KeyValueMapService keyValueMaps;
 
     public RuntimeConfigService(EnvironmentRepository environmentRepository, EnvironmentFinder environments,
                                 DeploymentRepository deployments, TargetServerRepository targetServers,
-                                SharedFlowDeploymentRepository sharedFlowDeployments) {
+                                SharedFlowDeploymentRepository sharedFlowDeployments, ApiProductRepository products,
+                                AppCredentialRepository credentials, KeyValueMapService keyValueMaps) {
         this.environmentRepository = environmentRepository;
         this.environments = environments;
         this.deployments = deployments;
         this.targetServers = targetServers;
         this.sharedFlowDeployments = sharedFlowDeployments;
+        this.products = products;
+        this.credentials = credentials;
+        this.keyValueMaps = keyValueMaps;
     }
 
     @Transactional(readOnly = true)
@@ -98,7 +118,36 @@ public class RuntimeConfigService {
                 .map(d -> new RuntimeSharedFlow(d.getSharedFlow().getName(), d.getRevision().getRevision(),
                         d.getRevision().policies(), d.getRevision().steps()))
                 .toList();
-        return new RuntimeEnvironmentConfig(org, env, environment.getConfigVersion(), Instant.now(), proxies,
-                sharedFlows);
+        Instant now = Instant.now();
+        List<ApiProduct> offered = products.findByOrganization_Id(environment.getOrganization().getId()).stream()
+                .filter(p -> p.availableIn(env)).toList();
+        Set<java.util.UUID> offeredIds = offered.stream().map(ApiProduct::getId).collect(Collectors.toSet());
+        List<RuntimeCredential> liveCredentials = credentials.findLive(environment.getOrganization().getId()).stream()
+                .filter(c -> !c.isExpired(now))
+                .map(c -> runtimeCredential(c, offeredIds))
+                .toList();
+        List<RuntimeKeyValueMap> maps = keyValueMaps.runtimeMaps(environment).stream()
+                .map(m -> new RuntimeKeyValueMap(m.name(), m.scope(), m.encrypted(), m.entries()))
+                .toList();
+        return new RuntimeEnvironmentConfig(org, env, environment.getConfigVersion(), now, proxies,
+                sharedFlows, offered.stream().map(RuntimeConfigService::runtimeProduct).toList(), liveCredentials, maps);
+    }
+
+    private static RuntimeApiProduct runtimeProduct(ApiProduct p) {
+        ProductQuota q = p.quota();
+        return new RuntimeApiProduct(p.getName(), p.proxies(), p.paths(), p.scopes(),
+                q == null ? null : new RuntimeQuota(q.count(), q.interval(), q.timeUnit()), p.attributes());
+    }
+
+    private static RuntimeCredential runtimeCredential(AppCredential c, Set<java.util.UUID> offeredProductIds) {
+        DeveloperApp app = c.getApp();
+        List<String> granted = c.getProducts().stream()
+                .filter(g -> g.getStatus() == ProductGrantStatus.APPROVED)
+                .filter(g -> offeredProductIds.contains(g.getApiProduct().getId()))
+                .map(g -> g.getApiProduct().getName())
+                .toList();
+        return new RuntimeCredential(c.getId().toString(), c.getKeyHash(), c.getSecretHash(), c.getExpiresAt(),
+                app.getId().toString(), app.getName(), app.attributes(), app.getDeveloper().getId().toString(),
+                app.getDeveloper().getEmail(), granted);
     }
 }

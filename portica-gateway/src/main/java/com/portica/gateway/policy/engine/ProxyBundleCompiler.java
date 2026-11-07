@@ -17,6 +17,7 @@ import com.portica.gateway.policy.PolicyFactory;
 import com.portica.gateway.policy.PolicyPhase;
 import com.portica.gateway.runtime.RuntimeModel.RuntimeEnvironmentConfig;
 import com.portica.gateway.runtime.RuntimeModel.RuntimeProxy;
+import com.portica.gateway.runtime.RuntimeModel.RuntimeKeyValueMap;
 import com.portica.gateway.runtime.RuntimeModel.RuntimeSharedFlow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -136,6 +137,13 @@ public class ProxyBundleCompiler {
                 @Override
                 public CompiledSharedFlow sharedFlow(String name) {
                     return get(name, stack);
+                }
+
+                @Override
+                public RuntimeKeyValueMap keyValueMap(String scope, String name) {
+                    return env.keyValueMaps().stream()
+                            .filter(m -> m.name().equals(name) && m.scope().equals(scope))
+                            .findFirst().orElse(null);
                 }
             };
         }

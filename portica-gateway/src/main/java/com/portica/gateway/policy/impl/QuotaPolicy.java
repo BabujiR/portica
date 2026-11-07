@@ -52,16 +52,20 @@ public final class QuotaPolicy implements Policy {
 
     @Override
     public Mono<Void> execute(MessageContext ctx) {
-        long windowMs = config.window().toMillis();
+        Limit limit = limit(ctx);
+        if (limit == null) {
+            return Mono.empty(); // useProductQuota, the product has no quota and no fallback count
+        }
+        long windowMs = limit.window().toMillis();
         long now = clock.millis();
         long windowStart = now - (now % windowMs);
         long windowEnd = windowStart + windowMs;
         long delta = weight(ctx);
         MessageContext.ProxyInfo p = ctx.proxy();
         String key = "quota:%s:%s:%s:%s:%s:%d".formatted(p.organization(), p.environment(), p.proxy(), name,
-                ctx.render(identifier), windowStart);
+                identifier(ctx), windowStart);
         String prefix = MessageContext.prefix("ratelimit", name);
-        long allowed = config.count();
+        long allowed = limit.count();
 
         return counters.increment(key, delta, Duration.ofMillis(windowEnd - now + 1_000))
                 .map(used -> {
@@ -91,6 +95,32 @@ public final class QuotaPolicy implements Policy {
                     return Mono.error(PolicyFault.of("QuotaUnavailable", 503, "Quota cannot be checked right now"));
                 })
                 .then();
+    }
+
+    private record Limit(long count, Duration window) {
+    }
+
+    /** The limit for this request: the authorizing product's quota, or the configured count. */
+    private Limit limit(MessageContext ctx) {
+        if (config.useProductQuota()) {
+            Object count = ctx.variable("apiproduct.quota.limit");
+            if (count instanceof Number n && n.longValue() > 0) {
+                Object interval = ctx.variable("apiproduct.quota.interval");
+                Object unit = ctx.variable("apiproduct.quota.timeunit");
+                int i = interval instanceof Number in ? in.intValue() : 1;
+                return new Limit(n.longValue(), QuotaConfig.window(i, unit == null ? null : String.valueOf(unit)));
+            }
+        }
+        return config.count() == null ? null : new Limit(config.count(), config.window());
+    }
+
+    /** Per app and product by default with useProductQuota, like Apigee's product quotas. */
+    private String identifier(MessageContext ctx) {
+        String id = ctx.render(identifier);
+        if (id.isEmpty() && config.useProductQuota()) {
+            return String.valueOf(ctx.variable("client_id")) + "|" + ctx.variable("apiproduct.name");
+        }
+        return id;
     }
 
     private long weight(MessageContext ctx) {

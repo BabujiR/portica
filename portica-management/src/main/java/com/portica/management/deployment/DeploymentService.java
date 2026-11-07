@@ -7,6 +7,7 @@ import com.portica.common.policy.BundleValidator;
 import com.portica.management.audit.AuditService;
 import com.portica.management.environment.Environment;
 import com.portica.management.environment.EnvironmentFinder;
+import com.portica.management.kvm.KeyValueMapService;
 import com.portica.management.organization.Organization;
 import com.portica.management.organization.OrganizationFinder;
 import com.portica.management.proxy.ApiProxy;
@@ -41,12 +42,13 @@ public class DeploymentService {
     private final TargetServerRepository targetServers;
     private final DeploymentRepository deployments;
     private final SharedFlowService sharedFlows;
+    private final KeyValueMapService keyValueMaps;
     private final AuditService audit;
 
     public DeploymentService(OrganizationFinder organizations, EnvironmentFinder environments,
                              ApiProxyRepository proxies, ApiProxyRevisionRepository revisions,
                              TargetServerRepository targetServers, DeploymentRepository deployments,
-                             SharedFlowService sharedFlows, AuditService audit) {
+                             SharedFlowService sharedFlows, KeyValueMapService keyValueMaps, AuditService audit) {
         this.organizations = organizations;
         this.environments = environments;
         this.proxies = proxies;
@@ -54,6 +56,7 @@ public class DeploymentService {
         this.targetServers = targetServers;
         this.deployments = deployments;
         this.sharedFlows = sharedFlows;
+        this.keyValueMaps = keyValueMaps;
         this.audit = audit;
     }
 
@@ -70,6 +73,7 @@ public class DeploymentService {
 
         requireUsableTarget(environment, revision);
         sharedFlows.requireDeployed(environment, BundleValidator.referencedSharedFlows(revision.policies()), null);
+        keyValueMaps.requireUsable(environment, BundleValidator.referencedKeyValueMaps(revision.policies()));
 
         Optional<Deployment> sameBasePath = deployments.findByEnvironment_IdAndBasePath(environment.getId(),
                 revision.getBasePath());

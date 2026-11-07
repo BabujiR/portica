@@ -1,22 +1,21 @@
 package com.portica.gateway.policy.credentials;
 
+import com.portica.common.security.Hashing;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
-import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
-import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
+
 
 /**
- * Resolves API keys listed in {@code portica.gateway.dev.api-keys}. Keys are held only as SHA-256
- * hashes in memory, and lookups compare hashes, so the comparison doesn't leak timing about the key.
+ * Resolves development API keys listed in {@code portica.gateway.dev.api-keys} (the {@code local}
+ * profile). Keys are held only as SHA-256 hashes in memory. A development key opens every proxy of
+ * its organization, in every environment, through the products it lists.
  */
-@Component
 public class ConfiguredCredentialResolver implements CredentialResolver {
 
     private static final Logger log = LoggerFactory.getLogger(ConfiguredCredentialResolver.class);
@@ -28,8 +27,10 @@ public class ConfiguredCredentialResolver implements CredentialResolver {
             if (k.key() == null || k.key().isBlank() || k.organization() == null) {
                 continue;
             }
-            byOrgAndHash.put(k.organization() + ":" + sha256(k.key()),
-                    new AppCredential(k.key(), k.app(), k.developer(), k.products(), Map.of()));
+            List<String> products = k.products() == null || k.products().isEmpty() ? List.of("dev") : k.products();
+            byOrgAndHash.put(k.organization() + ":" + Hashing.sha256Hex(k.key()),
+                    new AppCredential(null, null, null, k.app(), null, k.developer(),
+                            products.stream().map(ApiProductGrant::everyProxy).toList(), Map.of(), null, null));
         }
         if (!byOrgAndHash.isEmpty()) {
             log.warn("{} development API key(s) loaded from configuration. Not for shared environments.",
@@ -38,16 +39,16 @@ public class ConfiguredCredentialResolver implements CredentialResolver {
     }
 
     @Override
-    public Mono<AppCredential> resolveApiKey(String organization, String apiKey) {
-        return Mono.justOrEmpty(byOrgAndHash.get(organization + ":" + sha256(apiKey)));
+    public Optional<AppCredential> resolve(String organization, String environment, String consumerKey) {
+        AppCredential found = byOrgAndHash.get(organization + ":" + Hashing.sha256Hex(consumerKey));
+        if (found == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new AppCredential(consumerKey, null, null, found.appName(), null, found.developerEmail(),
+                found.products(), found.attributes(), null, null));
     }
 
-    static String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+    public boolean isEmpty() {
+        return byOrgAndHash.isEmpty();
     }
 }
