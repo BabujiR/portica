@@ -1,0 +1,138 @@
+# Portica local development infrastructure.
+#
+#   docker compose up -d                        # infrastructure only (run apps from your IDE / mvn)
+#   docker compose --profile app up -d --build  # infrastructure + management API container
+#
+# Credentials here are for local development only. Never reuse them in shared environments.
+name: portica
+
+services:
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: portica
+      POSTGRES_USER: portica
+      POSTGRES_PASSWORD: ${PORTICA_DB_PASSWORD:-portica}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portica -d portica"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:4.1.0
+    # Single-node KRaft (no ZooKeeper). Containers use kafka:29092, the host uses localhost:9092.
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      CLICKHOUSE_DB: portica_analytics
+      CLICKHOUSE_USER: portica
+      CLICKHOUSE_PASSWORD: ${PORTICA_CLICKHOUSE_PASSWORD:-portica}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9000:9000"   # native protocol
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Tokens always carry iss=http://localhost:8180/realms/portica, whether they are requested
+      # from the host or from another container, so every Portica service validates one issuer.
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+
+  management:
+    profiles: ["app"]
+    build:
+      context: ./portica-management
+    image: portica/portica-management:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/portica
+      PORTICA_DB_PASSWORD: ${PORTICA_DB_PASSWORD:-portica}
+      PORTICA_OIDC_ISSUER: http://localhost:8180/realms/portica
+      PORTICA_OIDC_JWKS: http://keycloak:8080/realms/portica/protocol/openid-connect/certs
+    ports:
+      - "8080:8080"
+
+  gateway:
+    profiles: ["app"]
+    build:
+      context: ./portica-gateway
+    image: portica/portica-gateway:local
+    depends_on:
+      - management
+    environment:
+      PORTICA_MANAGEMENT_URL: http://management:8080
+      PORTICA_OIDC_TOKEN_URI: http://keycloak:8080/realms/portica/protocol/openid-connect/token
+      PORTICA_GATEWAY_CLIENT_SECRET: ${PORTICA_GATEWAY_CLIENT_SECRET:-portica-gateway-dev-secret}
+    ports:
+      - "8081:8081"
+
+  # Demo backend for trying the gateway: echoes requests (path, headers, query) as JSON.
+  # From the host it is http://localhost:8090; from containers it is http://demo-backend:8080.
+  demo-backend:
+    image: mccutchen/go-httpbin:v2.15.0
+    ports:
+      - "8090:8080"
+
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:
+  clickhouse-data:
