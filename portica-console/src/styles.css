@@ -1,0 +1,22 @@
+:root {
+  --portica-selected: rgba(47, 84, 235, 0.08);
+}
+:root[data-theme='dark'] {
+  --portica-selected: rgba(89, 126, 247, 0.18);
+}
+html, body, #root {
+  margin: 0;
+  min-height: 100%;
+}
+body {
+  -webkit-font-smoothing: antialiased;
+}
+.page {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+@media (max-width: 760px) {
+  .hide-narrow {
+    display: none;
+  }
+}
