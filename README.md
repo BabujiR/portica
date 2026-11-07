@@ -1,7 +1,7 @@
 # Portica
 
 **The front door to your APIs.** A self-hosted, cloud-agnostic API management platform:
-Apigee-level completeness without the cost or lock-in.
+High-level completeness without the cost or lock-in.
 
 > **Status: Phase 2 – API proxies & gateway core.** Organizations, environments, members and RBAC
 > (Phase 1), plus target servers, API proxies with immutable revisions, OpenAPI import,
