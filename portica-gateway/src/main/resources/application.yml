@@ -1,0 +1,47 @@
+server:
+  port: 8081
+  shutdown: graceful
+
+spring:
+  application:
+    name: portica-gateway
+  cloud:
+    gateway:
+      metrics:
+        enabled: true
+      server:
+        webflux:
+          httpclient:
+            # defaults; each deployed revision overrides these with its own timeouts
+            connect-timeout: 5000
+            response-timeout: 30s
+
+portica:
+  gateway:
+    management-url: ${PORTICA_MANAGEMENT_URL:http://localhost:8080}
+    # "*" = every environment; or e.g. ["acme/*"] or ["acme/prod", "globex/prod"]
+    environments: "${PORTICA_GATEWAY_ENVIRONMENTS:*}"
+    sync:
+      enabled: true
+      poll-interval: 5s
+      timeout: 10s
+    auth:
+      token-uri: ${PORTICA_OIDC_TOKEN_URI:http://localhost:8180/realms/portica/protocol/openid-connect/token}
+      client-id: ${PORTICA_GATEWAY_CLIENT_ID:portica-gateway}
+      client-secret: ${PORTICA_GATEWAY_CLIENT_SECRET:portica-gateway-dev-secret}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true
+    gateway:
+      access: read-only   # /actuator/gateway/routes lists the live route table
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name}]"
