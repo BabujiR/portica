@@ -97,10 +97,10 @@ class PolicyBundleIntegrationTest extends AbstractIntegrationTest {
 
         // The proxy needs "security", which needs "cors-headers".
         deployProxy(org, "pets", 1, person(alice))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(containsString("security")));
         deploySharedFlow(org, "security", 1, person(alice))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(containsString("cors-headers")));
 
         deploySharedFlow(org, "cors-headers", 1, person(alice)).andExpect(status().isCreated());
@@ -122,10 +122,10 @@ class PolicyBundleIntegrationTest extends AbstractIntegrationTest {
 
         // A shared flow in use cannot be undeployed; neither can the environment be deleted.
         undeploySharedFlow(org, "cors-headers", 1, person(alice))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(containsString("security")));
         undeploySharedFlow(org, "security", 1, person(alice))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(containsString("pets")));
 
         // Revision 2 of cors-headers calling back into security would create a cycle.
@@ -138,7 +138,7 @@ class PolicyBundleIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.revision").value(2));
         deploySharedFlow(org, "cors-headers", 2, person(alice))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(containsString("cycle")));
 
         // Undeploying in reverse order works.

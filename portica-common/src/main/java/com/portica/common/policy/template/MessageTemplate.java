@@ -45,7 +45,7 @@ public final class MessageTemplate {
             p.add(source.substring(last));
         }
         this.parts = List.copyOf(p);
-        this.variables = Set.copyOf(vars);
+        this.variables = java.util.Collections.unmodifiableSet(vars); // keeps first-appearance order
     }
 
     public static MessageTemplate of(String source) {

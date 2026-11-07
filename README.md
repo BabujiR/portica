@@ -194,13 +194,17 @@ mvn clean verify
 
 # 3. Run the management API, then (in a second terminal) the gateway
 mvn -pl portica-management spring-boot:run
-mvn -pl portica-gateway spring-boot:run -Dspring-boot.run.profiles=local
+mvn -pl portica-gateway spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 
 The gateway needs Redis (Quota counters, response cache), which `docker compose up -d` starts. The
 `local` profile adds a development API key (`dev-acme-key-123` for org `acme`) for the VerifyAPIKey
 policy until developer apps arrive in Phase 4. In IntelliJ, set *Active profiles* to `local` in the
 gateway's run configuration.
+
+> **Windows PowerShell:** keep the quotes around `-D` arguments that contain dots. PowerShell splits
+> unquoted ones at the first dot, and Maven then fails with "Unknown lifecycle phase". Command Prompt,
+> Git Bash and macOS/Linux shells accept them with or without quotes.
 
 > **Upgrading from Phase 1?** Keycloak only imports the realm the first time it starts, so recreate it
 > once to get the new `portica-gateway` client: `docker compose up -d --force-recreate keycloak`.
