@@ -1,0 +1,21 @@
+server:
+  port: 8083
+  shutdown: graceful
+
+spring:
+  application:
+    name: portica-mcp
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{requestId:-}]"
