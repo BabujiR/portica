@@ -128,6 +128,22 @@ services:
     ports:
       - "8081:8081"
 
+  # Web console (Phase 5). For development, run it with `npm run dev` in portica-console instead;
+  # this container serves the production build: docker compose --profile console up -d --build console
+  console:
+    profiles: ["console"]
+    build:
+      context: ./portica-console
+    image: portica/portica-console:local
+    environment:
+      # URLs as the browser sees them (not container names).
+      PORTICA_API_BASE_URL: http://localhost:8080
+      PORTICA_GATEWAY_URL: http://localhost:8081
+      PORTICA_OIDC_AUTHORITY: http://localhost:8180/realms/portica
+      PORTICA_OIDC_CLIENT_ID: portica-console
+    ports:
+      - "5173:80"
+
   # Demo backend for trying the gateway: echoes requests (path, headers, query) as JSON.
   # From the host it is http://localhost:8090; from containers it is http://demo-backend:8080.
   demo-backend:

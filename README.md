@@ -3,11 +3,12 @@
 **The front door to your APIs.** A self-hosted, cloud-agnostic API management platform:
 High-level completeness without the cost or lock-in.
 
-> **Status: Phase 4 – Products, developers and apps.** Organizations, environments, members and RBAC
-> (Phase 1); target servers, API proxies with immutable revisions, OpenAPI import and live deployments
-> (Phase 2); a policy engine with flows, fault rules, shared flows and 17 built-in policies (Phase 3);
-> and API products, developers, developer apps with key issuance, rotation and revocation, key value
-> maps, and an OAuth 2.0 client-credentials token endpoint enforced at the gateway (Phase 4).
+> **Status: Phase 5 – Console.** Organizations, environments, members and RBAC (Phase 1); target
+> servers, API proxies with immutable revisions, OpenAPI import and live deployments (Phase 2); a policy
+> engine with flows, fault rules, shared flows and 17 built-in policies (Phase 3); API products,
+> developers, apps with key issuance, rotation and revocation, key value maps and OAuth 2.0 client
+> credentials (Phase 4); and a React + Ant Design web console with a drag-and-drop policy flow editor
+> (Phase 5).
 
 ---
 
@@ -16,7 +17,7 @@ High-level completeness without the cost or lock-in.
 ```mermaid
 flowchart LR
     subgraph Clients
-        Console["portica-console<br/>(React, Phase 5)"]
+        Console["portica-console<br/>(React + Ant Design)"]
         Portal["Developer Portal UI<br/>(Phase 8)"]
         Apps["API consumers<br/>& AI agents"]
     end
@@ -60,7 +61,7 @@ flowchart LR
 | `portica-ai-gateway` | 8082 | Skeleton | LLM gateway (Phase 7) |
 | `portica-mcp` | 8083 | Skeleton | MCP gateway (Phase 7) |
 | `portica-portal` | 8085 | Skeleton | Developer portal backend (Phase 8) |
-| `portica-console` | 5173 | Placeholder | React console (Phase 5) |
+| `portica-console` | 5173 | Phase 5 | React + Ant Design web console ([README](portica-console/README.md)) |
 
 ### Phase 1 data model
 
@@ -196,6 +197,9 @@ mvn clean verify
 # 3. Run the management API, then (in a second terminal) the gateway
 mvn -pl portica-management spring-boot:run
 mvn -pl portica-gateway spring-boot:run "-Dspring-boot.run.profiles=local"
+
+# 4. The console (in a third terminal): open http://localhost:5173 and sign in as admin / admin
+cd portica-console && npm install && npm run dev
 ```
 
 The gateway needs Redis (Quota counters, response cache, OAuth tokens), which `docker compose up -d`
@@ -745,7 +749,7 @@ decrypted values over the authenticated runtime feed and keep them in memory onl
 `private.*` variables will be masked in trace sessions (Phase 6). A KMS-backed key and key rotation are
 planned for hardening.
 
-## Next: Phase 5
+## Next: Phase 6
 
-The console: a React GUI for everything so far, including the flow designer for policies, API products,
-developers and apps with key management, and key value maps.
+Analytics and trace: request metrics from the gateways (Kafka → ClickHouse), dashboards in the console,
+and live trace sessions that show each policy's effect on a request.
