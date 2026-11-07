@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * configuration the way the synchronizer does, verifying routes appear, swap and disappear live.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "portica.gateway.sync.enabled=false")
+        properties = {"portica.gateway.sync.enabled=false", "portica.gateway.policy.store=memory"})
 class GatewayRoutingIntegrationTest {
 
     private static HttpServer backend;

@@ -3,6 +3,7 @@ package com.portica.management.web;
 import com.portica.common.error.ErrorCode;
 import com.portica.common.error.PorticaException;
 import com.portica.management.config.RequestIdFilter;
+import com.portica.management.proxy.InvalidBundleException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -38,7 +39,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(PorticaException.class)
     ResponseEntity<ProblemDetail> handlePortica(PorticaException ex) {
-        return respond(problem(ex.errorCode(), ex.getMessage()));
+        ProblemDetail problem = problem(ex.errorCode(), ex.getMessage());
+        if (ex instanceof InvalidBundleException bundle) {
+            problem.setProperty("errors", bundle.problems());
+        }
+        return respond(problem);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

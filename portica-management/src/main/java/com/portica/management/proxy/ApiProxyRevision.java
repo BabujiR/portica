@@ -8,6 +8,12 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+import com.portica.common.policy.BundleJson;
+import com.portica.common.policy.PolicyDefinition;
+import com.portica.common.policy.ProxyFlows;
+import org.hibernate.annotations.ColumnTransformer;
+
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -50,12 +56,23 @@ public class ApiProxyRevision extends AuditableEntity {
     @Column(name = "openapi_spec", updatable = false, columnDefinition = "text")
     private String openApiSpec;
 
+    /** JSON array of {@link PolicyDefinition}. */
+    @Column(name = "policies", nullable = false, updatable = false, columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
+    private String policiesJson;
+
+    /** JSON {@link ProxyFlows}. */
+    @Column(name = "flows", nullable = false, updatable = false, columnDefinition = "jsonb")
+    @ColumnTransformer(write = "?::jsonb")
+    private String flowsJson;
+
     protected ApiProxyRevision() {
         // JPA
     }
 
     ApiProxyRevision(ApiProxy apiProxy, int revision, String description, String basePath, TargetSpec target,
-                     int connectTimeoutMs, int readTimeoutMs, String openApiSpec) {
+                     int connectTimeoutMs, int readTimeoutMs, String openApiSpec, List<PolicyDefinition> policies,
+                     ProxyFlows flows) {
         this.apiProxy = Objects.requireNonNull(apiProxy, "apiProxy");
         this.revision = revision;
         this.description = description;
@@ -66,6 +83,16 @@ public class ApiProxyRevision extends AuditableEntity {
         this.connectTimeoutMs = connectTimeoutMs;
         this.readTimeoutMs = readTimeoutMs;
         this.openApiSpec = openApiSpec;
+        this.policiesJson = BundleJson.writePolicies(policies);
+        this.flowsJson = BundleJson.writeFlows(flows);
+    }
+
+    public List<PolicyDefinition> policies() {
+        return BundleJson.readPolicies(policiesJson);
+    }
+
+    public ProxyFlows flows() {
+        return BundleJson.readFlows(flowsJson);
     }
 
     public TargetSpec target() {

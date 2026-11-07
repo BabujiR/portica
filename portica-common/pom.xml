@@ -12,12 +12,18 @@
 
     <artifactId>portica-common</artifactId>
     <name>Portica :: Common</name>
-    <description>Shared, framework-light types used by every Portica module: error model, headers, validation, paging.</description>
+    <description>Shared, framework-light types used by every Portica module: error model, headers, validation,
+        paging, and the policy model (definitions, flows, conditions, templates, policy configs).</description>
 
     <dependencies>
         <dependency>
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+        <!-- Binds policy configs and (de)serializes policy bundles; version from Spring Boot's Jackson 3 BOM -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
         </dependency>
 
         <dependency>

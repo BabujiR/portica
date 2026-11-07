@@ -1,0 +1,14 @@
+# Local development profile: run the gateway with --spring.profiles.active=local
+# (IntelliJ: Run configuration > Active profiles: local).
+#
+# Development API keys for the VerifyAPIKey policy, until developer apps arrive in Phase 4.
+# Never use this file in a shared environment: the keys are plain text.
+portica:
+  gateway:
+    dev:
+      api-keys:
+        - organization: acme
+          key: dev-acme-key-123
+          app: demo-app
+          developer: alice@portica.local
+          products: [demo]

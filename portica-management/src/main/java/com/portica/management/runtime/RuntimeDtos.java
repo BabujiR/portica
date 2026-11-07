@@ -1,5 +1,9 @@
 package com.portica.management.runtime;
 
+import com.portica.common.policy.FlowStep;
+import com.portica.common.policy.PolicyDefinition;
+import com.portica.common.policy.ProxyFlows;
+
 import java.time.Instant;
 import java.util.List;
 
@@ -21,7 +25,8 @@ public final class RuntimeDtos {
 
     /** Everything a gateway needs to serve one environment. */
     public record RuntimeEnvironmentConfig(String organization, String environment, long configVersion,
-                                           Instant generatedAt, List<RuntimeProxy> proxies) {
+                                           Instant generatedAt, List<RuntimeProxy> proxies,
+                                           List<RuntimeSharedFlow> sharedFlows) {
     }
 
     /**
@@ -29,6 +34,11 @@ public final class RuntimeDtos {
      * @param targetPath path prefix on the backend ("" for none), e.g. {@code /v2}
      */
     public record RuntimeProxy(String name, int revision, String basePath, String targetUri, String targetPath,
-                               int connectTimeoutMs, int readTimeoutMs) {
+                               int connectTimeoutMs, int readTimeoutMs, List<PolicyDefinition> policies,
+                               ProxyFlows flows) {
+    }
+
+    /** A shared flow deployed in the environment, callable by FlowCallout policies. */
+    public record RuntimeSharedFlow(String name, int revision, List<PolicyDefinition> policies, List<FlowStep> steps) {
     }
 }

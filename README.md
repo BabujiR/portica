@@ -3,9 +3,10 @@
 **The front door to your APIs.** A self-hosted, cloud-agnostic API management platform:
 High-level completeness without the cost or lock-in.
 
-> **Status: Phase 2 – API proxies & gateway core.** Organizations, environments, members and RBAC
-> (Phase 1), plus target servers, API proxies with immutable revisions, OpenAPI import,
-> deployments, and a gateway that picks up deployment changes live, without restarts.
+> **Status: Phase 3 – Policy engine.** Organizations, environments, members and RBAC (Phase 1);
+> target servers, API proxies with immutable revisions, OpenAPI import and live deployments (Phase 2);
+> and a policy engine with PreFlow / conditional flows / PostFlow / FaultRules, shared flows and
+> 16 built-in policies, enforced by the gateway on every request (Phase 3).
 
 ---
 
@@ -193,8 +194,13 @@ mvn clean verify
 
 # 3. Run the management API, then (in a second terminal) the gateway
 mvn -pl portica-management spring-boot:run
-mvn -pl portica-gateway spring-boot:run
+mvn -pl portica-gateway spring-boot:run -Dspring-boot.run.profiles=local
 ```
+
+The gateway needs Redis (Quota counters, response cache), which `docker compose up -d` starts. The
+`local` profile adds a development API key (`dev-acme-key-123` for org `acme`) for the VerifyAPIKey
+policy until developer apps arrive in Phase 4. In IntelliJ, set *Active profiles* to `local` in the
+gateway's run configuration.
 
 > **Upgrading from Phase 1?** Keycloak only imports the realm the first time it starts, so recreate it
 > once to get the new `portica-gateway` client: `docker compose up -d --force-recreate keycloak`.
@@ -283,8 +289,136 @@ jq -n --arg spec "$SPEC" '{name:"petstore", spec:$spec}' | \
 curl -s http://localhost:8081/actuator/gateway/routes | jq '.[].route_id'
 ```
 
+### Phase 3: protect the API with policies
+
+A revision can carry a policy bundle: `policies` (named, configured instances) and `flows` (where they run).
+
+```bash
+# Revision 3 of "echo": CORS, API key, quota per app, header enrichment, a fault rule and JSON->XML on demand
+cat > bundle.json <<'EOF'
+{"basePath":"/echo","target":{"url":"http://localhost:8090/anything"},
+ "policies":[
+   {"name":"cors","type":"CORS","config":{"allowOrigins":["http://localhost:3000"],"allowHeaders":["*"]}},
+   {"name":"verify-key","type":"VerifyAPIKey","config":{}},
+   {"name":"quota","type":"Quota","config":{"count":5,"interval":1,"timeUnit":"minute",
+                                             "identifier":"{verifyapikey.verify-key.client_id}"}},
+   {"name":"spike","type":"SpikeArrest","config":{"rate":"20ps"}},
+   {"name":"enrich","type":"AssignMessage","config":{
+      "setHeaders":{"X-App":"{verifyapikey.verify-key.app.name}"},"removeHeaders":["x-api-key"]}},
+   {"name":"to-xml","type":"JSONToXML","config":{"rootElement":"response"}},
+   {"name":"no-key","type":"RaiseFault","config":{"statusCode":401,"headers":{"WWW-Authenticate":"ApiKey"},
+      "body":"{\"error\":\"unauthorized\",\"reason\":\"{fault.name}\"}"}}],
+ "flows":{
+   "preFlow":{"request":[{"policy":"cors"},{"policy":"spike"},{"policy":"verify-key"},
+                         {"policy":"quota"},{"policy":"enrich"}]},
+   "conditionalFlows":[{"name":"xml","condition":"request.header.accept == \"application/xml\"",
+                        "response":[{"policy":"to-xml"}]}],
+   "faultRules":[{"name":"auth","condition":"fault.name == \"InvalidApiKey\" or fault.name == \"FailedToResolveAPIKey\"",
+                  "steps":[{"policy":"no-key"}]}]}}
+EOF
+curl -s -X POST $API/organizations/acme/apis/echo/revisions -H "Authorization: Bearer $ALICE" \
+  -H 'Content-Type: application/json' -d @bundle.json | jq '{revision, policies: [.policies[].name]}'
+curl -s -X POST $API/organizations/acme/environments/dev/apis/echo/revisions/3/deployments -H "Authorization: Bearer $ALICE" | jq
+
+curl -i http://localhost:8081/acme/dev/echo/pets                                   # 401, reshaped by the fault rule
+curl -s http://localhost:8081/acme/dev/echo/pets -H 'x-api-key: dev-acme-key-123' | jq .headers  # X-App: demo-app
+curl -s http://localhost:8081/acme/dev/echo/pets -H 'x-api-key: dev-acme-key-123' -H 'Accept: application/xml'
+for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w '%{http_code} ' http://localhost:8081/acme/dev/echo/pets \
+  -H 'x-api-key: dev-acme-key-123'; done; echo                                       # ... 429 once the quota is used
+
+# Invalid bundles are rejected with every problem listed
+curl -s -X POST $API/organizations/acme/apis/echo/revisions -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' \
+  -d '{"basePath":"/echo","target":{"url":"http://localhost:8090"},"policies":[{"name":"q","type":"Quota","config":{"count":0}}],
+       "flows":{"preFlow":{"request":[{"policy":"nope"}]}}}' | jq '{code, errors}'
+
+# Shared flows: reusable chains, deployed per environment, called with FlowCallout
+curl -s -X POST $API/organizations/acme/sharedflows -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' \
+  -d '{"name":"security","revision":{"policies":[{"name":"spike","type":"SpikeArrest","config":{"rate":"50ps"}}],
+       "steps":[{"policy":"spike"}]}}' | jq
+curl -s -X POST $API/organizations/acme/environments/dev/sharedflows/security/revisions/1/deployments \
+  -H "Authorization: Bearer $ALICE" | jq
+# then add {"name":"common","type":"FlowCallout","config":{"sharedFlow":"security"}} to any proxy bundle
+
+# The policy catalog (what the console's policy palette will show)
+curl -s $API/policy-types -H "Authorization: Bearer $ALICE" | jq '.[] | {type, category}'
+```
+
 On Windows PowerShell, use the token snippet from the IntelliJ guide and `Invoke-RestMethod`, or run the
 commands above from Git Bash.
+
+## Policies (Phase 3)
+
+### How a request flows
+
+```mermaid
+flowchart LR
+    C[Client] --> PRE[PreFlow request]
+    PRE --> CF{first conditional flow<br/>whose condition matches}
+    CF --> POST[PostFlow request]
+    POST --> T[(Target)]
+    T --> PRER[PreFlow response]
+    PRER --> CFR[matched flow response]
+    CFR --> POSTR[PostFlow response]
+    POSTR --> C
+    PRE & CF & POST & T & PRER & CFR & POSTR -. fault .-> FR[first matching FaultRule<br/>or DefaultFaultRule]
+    FR --> C
+```
+
+- A step is `{"policy": "<name>", "condition": "<optional>"}`; it runs only when its condition is true.
+- A policy that answers the request itself (CORS preflight, ResponseCache hit) skips the rest of the
+  request flow and the target; the response flow still runs.
+- A fault stops the flow. The first FaultRule whose condition matches runs (otherwise the
+  DefaultFaultRule), shaping the error response. Without one, clients get
+  `{"fault":{"name","message","requestId"}}` with the fault's status. Stack traces are never returned.
+- `continueOnError: true` on a policy records its fault in `<policy>.failed` / `<policy>.fault.name`
+  and carries on.
+- `enabled: false` keeps a policy in the bundle but drops its steps.
+
+### Built-in policies
+
+| Policy | Category | What it does | Faults |
+|---|---|---|---|
+| `VerifyAPIKey` | Security | Validates an API key (default from `x-api-key`); sets `verifyapikey.<name>.client_id`, `.app.name`, `.developer.email`, `.apiproduct.name` | `FailedToResolveAPIKey`, `InvalidApiKey` (401) |
+| `OAuthV2` | Security | `VerifyAccessToken`: validates a bearer JWT against a JWKS (issuer, audiences, required scopes) | `MissingAccessToken`, `InvalidAccessToken` (401), `InsufficientScope` (403) |
+| `VerifyJWT` | Security | Verifies a JWT from any source; RS*/ES* via JWKS or HS* with a shared secret; issuer, audience, subject, claims | `JwtMissing`, `JwtInvalid` (401) |
+| `AccessControl` | Security | IP/CIDR allow and deny lists | `AccessDenied` (403) |
+| `RegularExpressionProtection` | Threat protection | Blocks requests whose path, query, headers or body match patterns | `ThreatDetected` (400) |
+| `JSONThreatProtection` | Threat protection | Limits depth, entries, array size, string and name length, body size | `JsonThreatDetected` (400) |
+| `Quota` | Traffic | Fixed-window counts per identifier, **shared by all gateways** (Redis); `RateLimit-*` headers | `QuotaViolation` (429), `QuotaUnavailable` (503) |
+| `SpikeArrest` | Traffic | Token-bucket smoothing (`100ps`, `600pm`, with `burst`), per gateway instance | `SpikeArrestViolation` (429) |
+| `ResponseCache` | Traffic | Caches GET/HEAD responses in Redis; skips `private`/`no-store`/`Set-Cookie` | – |
+| `CORS` | Mediation | Answers preflight requests and adds CORS headers to every response, errors included | – |
+| `AssignMessage` | Mediation | Sets/adds/removes headers and query params; sets verb, path, body, status, variables | – |
+| `JSONToXML` / `XMLToJSON` | Mediation | Converts request or response bodies (XML parsing is XXE-safe) | `InvalidJSON` / `InvalidXML` |
+| `RaiseFault` | Mediation | Raises a custom fault; inside a FaultRule, replaces the error response | configurable |
+| `ServiceCallout` | Extension | Calls another HTTP service; exposes `servicecallout.<name>.response.*` | `ServiceCalloutFailed` (502) |
+| `FlowCallout` | Extension | Runs a deployed shared flow | its policies' faults |
+
+`GET /api/v1/policy-types` returns the same catalog with each policy's config fields. Unknown config
+fields are rejected, so typos fail at revision creation, not at runtime.
+
+### Conditions and templates
+
+Conditions: `==  !=  =| (starts with)  ~ (wildcard)  ~~ (regex)  <  <=  >  >=`, combined with
+`and`/`&&`, `or`/`||`, `not`/`!` and parentheses; `null`, `true`, `false`, numbers and quoted strings.
+A bare variable is true when it is set and not `false`/empty. Example:
+`request.verb == "GET" and proxy.pathsuffix ~ "/pets/*" and not request.header.x-debug`.
+
+Templates use `{variable}` anywhere a policy takes text (headers, bodies, identifiers). Braces that don't
+wrap a variable name, like JSON, stay literal.
+
+Variables: `organization.name`, `environment.name`, `apiproxy.name`, `apiproxy.revision`, `proxy.basepath`,
+`proxy.pathsuffix`, `request.verb`, `request.uri`, `request.path`, `request.querystring`,
+`request.header.<name>`, `request.queryparam.<name>`, `request.content`, `client.ip`, `messageid`,
+`response.status.code`, `response.header.<name>`, `response.content`, `fault.name`, `fault.message`,
+`error.status.code`, `current.flow.name`, `system.timestamp`, plus those set by policies.
+
+### Shared flows
+
+A shared flow is a named list of steps with its own policies and immutable revisions, deployed per
+environment and called with `FlowCallout`. Deployment enforces order: a proxy or shared flow can only be
+deployed where every shared flow it calls is live, a shared flow can't be undeployed while something
+calls it, and call cycles are refused (the gateway also stops at 5 levels of nesting).
 
 ## Management API (v1)
 
@@ -310,6 +444,11 @@ commands above from Git Bash.
 | POST / DELETE | `/organizations/{org}/apis/{api}/revisions[/{rev}]` | `PROXY_WRITE` |
 | POST / DELETE | `/organizations/{org}/environments/{env}/apis/{api}/revisions/{rev}/deployments` | `PROXY_DEPLOY` |
 | GET | `/organizations/{org}/environments/{env}/deployments`, `/organizations/{org}/apis/{api}/deployments` | `PROXY_READ` |
+| GET | `/organizations/{org}/sharedflows[/{name}]`, `.../{name}/revisions[/{rev}]`, `.../{name}/deployments` | `PROXY_READ` |
+| POST / DELETE | `/organizations/{org}/sharedflows[/{name}]`, `.../{name}/revisions[/{rev}]` | `PROXY_WRITE` |
+| POST / DELETE | `/organizations/{org}/environments/{env}/sharedflows/{name}/revisions/{rev}/deployments` | `PROXY_DEPLOY` |
+| GET | `/organizations/{org}/environments/{env}/sharedflow-deployments` | `PROXY_READ` |
+| GET | `/policy-types` (policy catalog with config fields) | authenticated |
 | GET | `/internal/v1/runtime/environments`, `/internal/v1/runtime/organizations/{org}/environments/{env}` | `portica-runtime` realm role (gateways) |
 
 List endpoints take `page`, `size` (max 100), `sort` (allow-listed fields) and `q` (case-insensitive search)
@@ -419,8 +558,39 @@ JWT) arrives with the policy engine in Phase 3, so until then a deployed proxy i
 API creation to less trusted users, add an allow-list of target hosts/networks to prevent the gateway
 being used to reach internal services (SSRF).
 
-## Next: Phase 3
+### Phase 3
 
-The policy engine: a Policy SPI, PreFlow / conditional flows / PostFlow / FaultRules, shared flows,
-and the first policies (VerifyAPIKey, Quota and SpikeArrest on Redis, CORS, AssignMessage), enforced
-by the gateway on every deployed revision.
+**Policies compile once, run many.** The gateway turns each deployed revision into executable objects
+when the environment snapshot arrives (configs bound, conditions parsed, shared flows linked). Requests
+never parse JSON config or condition text.
+
+**Fail closed.** A revision that doesn't compile on a gateway (unknown policy type, broken shared flow
+reference) is not routed at all, so its URL returns 404 instead of running without its security policies.
+The management plane validates bundles first, so this is a safety net for version skew between components.
+
+**Streaming unless a policy needs the body.** The engine works out per revision whether any policy reads
+the request body or changes the response body. If none does, the request streams to the target and
+response policies (headers, status, CORS, rate-limit headers) run on headers only while the body streams
+back. Buffering is capped (`portica.gateway.policy.max-request-body-bytes` / `max-response-body-bytes`, 10 MB
+by default) and returns 413 / 502 beyond that.
+
+**Quota is distributed; SpikeArrest is local.** Quota uses one atomic Redis script per request, so limits
+hold across any number of gateways. If Redis is down, Quota fails open by default (logs a warning,
+lets traffic through); set `failOpen: false` to fail with 503 instead. SpikeArrest smooths bursts on each
+gateway instance with no network call, like Apigee's per-message-processor behaviour, so its effective
+cluster rate is `rate × replicas`.
+
+**CORS is a per-proxy policy.** WebFlux normally answers browser preflight requests itself before any
+gateway filter runs. Portica passes them through to the proxy's flows so each API controls its own CORS.
+
+**API keys are temporary in Phase 3.** VerifyAPIKey resolves keys through a `CredentialResolver`. Until
+developers, apps and API products arrive in Phase 4, keys come from configuration (the `local` profile),
+are stored hashed in memory, and never appear in logs.
+
+**ServiceCallout can reach any http(s) URL.** As with targets, add an outbound allow-list before letting
+less trusted users author bundles (SSRF).
+
+## Next: Phase 4
+
+Products, developers and apps: API products bundling proxies with quotas and scopes, developer and app
+registration, API key and OAuth client credentials issuance, and VerifyAPIKey/OAuthV2 backed by them.

@@ -1,5 +1,7 @@
 package com.portica.management.proxy;
 
+import com.portica.common.policy.PolicyDefinition;
+import com.portica.common.policy.ProxyFlows;
 import com.portica.common.validation.ResourceName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -62,7 +64,13 @@ public final class ApiProxyDtos {
             String description,
 
             @Schema(description = "OpenAPI 3.x or Swagger 2.0 document (YAML or JSON) describing the API")
-            String openApiSpec) {
+            String openApiSpec,
+
+            @Schema(description = "Policies available to this revision's flows. See GET /api/v1/policy-types")
+            List<PolicyDefinition> policies,
+
+            @Schema(description = "PreFlow, conditional flows, PostFlow and fault rules that attach the policies")
+            ProxyFlows flows) {
     }
 
     public record CreateApiProxyRequest(
@@ -118,12 +126,13 @@ public final class ApiProxyDtos {
 
     public record RevisionResponse(String apiProxy, int revision, String description, String basePath,
                                    TargetResponse target, int connectTimeoutMs, int readTimeoutMs,
-                                   boolean hasOpenApiSpec, Instant createdAt, String createdBy) {
+                                   boolean hasOpenApiSpec, List<PolicyDefinition> policies, ProxyFlows flows,
+                                   Instant createdAt, String createdBy) {
 
         public static RevisionResponse from(ApiProxyRevision r) {
             return new RevisionResponse(r.getApiProxy().getName(), r.getRevision(), r.getDescription(),
                     r.getBasePath(), TargetResponse.from(r.target()), r.getConnectTimeoutMs(), r.getReadTimeoutMs(),
-                    r.getOpenApiSpec() != null, r.getCreatedAt(), r.getCreatedBy());
+                    r.getOpenApiSpec() != null, r.policies(), r.flows(), r.getCreatedAt(), r.getCreatedBy());
         }
     }
 
