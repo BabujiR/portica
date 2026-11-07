@@ -1,6 +1,10 @@
 package com.portica.management.proxy;
 
+import com.portica.common.http.PorticaPaths;
 import com.portica.common.error.BusinessRuleViolationException;
+import com.portica.common.policy.BundleValidator;
+import com.portica.common.policy.PolicyDefinition;
+import com.portica.common.policy.ProxyFlows;
 import com.portica.common.error.InvalidRequestException;
 import com.portica.common.error.ResourceConflictException;
 import com.portica.common.error.ResourceNotFoundException;
@@ -22,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -169,7 +174,7 @@ public class ApiProxyService {
         String revisionNote = "Imported from OpenAPI '%s'%s".formatted(document.title(),
                 document.apiVersion() == null ? "" : " version " + document.apiVersion());
         CreateRevisionRequest revisionRequest = new CreateRevisionRequest(basePath, target, null, null,
-                truncate(revisionNote, 1024), request.spec());
+                truncate(revisionNote, 1024), request.spec(), null, null);
 
         Optional<ApiProxy> existing = proxies.findByOrganization_IdAndName(organization.getId(), request.name());
         ApiProxy proxy = existing.orElseGet(() -> proxies.save(new ApiProxy(organization, request.name(),
@@ -190,15 +195,25 @@ public class ApiProxyService {
     // ----------------------------------------------------------------- helpers
 
     private ApiProxyRevision addRevision(ApiProxy proxy, CreateRevisionRequest request) {
+        if (PorticaPaths.isReserved(request.basePath())) {
+            throw new InvalidRequestException("Base path '%s' is reserved for the gateway's OAuth endpoints"
+                    .formatted(request.basePath()));
+        }
         TargetSpec target = TargetSpec.of(request.target().url(), request.target().server(), request.target().path());
         if (request.openApiSpec() != null && !request.openApiSpec().isBlank()) {
             openApiParser.parse(request.openApiSpec()); // reject invalid specs up front
+        }
+        List<PolicyDefinition> policies = request.policies() == null ? List.of() : request.policies();
+        ProxyFlows flows = request.flows() == null ? ProxyFlows.EMPTY : request.flows();
+        List<String> problems = BundleValidator.validateProxy(policies, flows);
+        if (!problems.isEmpty()) {
+            throw new InvalidBundleException(problems);
         }
         int number = proxy.nextRevisionNumber();
         return revisions.save(new ApiProxyRevision(proxy, number, request.description(), request.basePath(), target,
                 request.connectTimeoutMs() == null ? DEFAULT_CONNECT_TIMEOUT_MS : request.connectTimeoutMs(),
                 request.readTimeoutMs() == null ? DEFAULT_READ_TIMEOUT_MS : request.readTimeoutMs(),
-                isBlank(request.openApiSpec()) ? null : request.openApiSpec()));
+                isBlank(request.openApiSpec()) ? null : request.openApiSpec(), policies, flows));
     }
 
     private ApiProxy find(Organization organization, String name) {
@@ -217,6 +232,7 @@ public class ApiProxyService {
         details.put("revision", revision.getRevision());
         details.put("basePath", revision.getBasePath());
         details.put("target", revision.target().describe());
+        details.put("policies", revision.policies().size());
         return details;
     }
 

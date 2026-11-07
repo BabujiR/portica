@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /**
  * Turns runtime snapshots into Spring Cloud Gateway route definitions.
@@ -35,10 +36,18 @@ public final class RouteDefinitionFactory {
     }
 
     public static List<RouteDefinition> build(Collection<RuntimeEnvironmentConfig> environments) {
+        return build(environments, key -> true);
+    }
+
+    /** Routes for the proxies whose bundle key passes {@code include} (e.g. only those that compiled). */
+    public static List<RouteDefinition> build(Collection<RuntimeEnvironmentConfig> environments,
+                                              Predicate<String> include) {
         List<RouteDefinition> routes = new ArrayList<>();
         for (RuntimeEnvironmentConfig env : environments) {
             for (RuntimeProxy proxy : env.proxies()) {
-                routes.add(route(env.organization(), env.environment(), proxy));
+                if (include.test(proxy.bundleKey(env.organization(), env.environment()))) {
+                    routes.add(route(env.organization(), env.environment(), proxy));
+                }
             }
         }
         return routes;
@@ -62,6 +71,7 @@ public final class RouteDefinitionFactory {
         args.put("environment", env);
         args.put("proxy", proxy.name());
         args.put("revision", Integer.toString(proxy.revision()));
+        args.put("bundle", proxy.bundleKey(org, env));
         filter.setArgs(args);
         route.setFilters(List.of(filter));
 

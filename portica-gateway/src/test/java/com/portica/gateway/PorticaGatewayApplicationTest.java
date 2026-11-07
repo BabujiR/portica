@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "portica.gateway.sync.enabled=false")
+        properties = {"portica.gateway.sync.enabled=false", "portica.gateway.policy.store=memory"})
 class PorticaGatewayApplicationTest {
 
     @Test

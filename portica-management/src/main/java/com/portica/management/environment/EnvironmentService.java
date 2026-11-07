@@ -3,6 +3,7 @@ package com.portica.management.environment;
 import com.portica.common.error.BusinessRuleViolationException;
 import com.portica.common.error.ResourceConflictException;
 import com.portica.management.deployment.DeploymentRepository;
+import com.portica.management.sharedflow.SharedFlowDeploymentRepository;
 import com.portica.common.error.ResourceNotFoundException;
 import com.portica.management.audit.AuditService;
 import com.portica.management.environment.EnvironmentDtos.CreateEnvironmentRequest;
@@ -26,13 +27,16 @@ public class EnvironmentService {
     private final EnvironmentRepository environments;
     private final OrganizationFinder organizations;
     private final DeploymentRepository deployments;
+    private final SharedFlowDeploymentRepository sharedFlowDeployments;
     private final AuditService audit;
 
     public EnvironmentService(EnvironmentRepository environments, OrganizationFinder organizations,
-                              DeploymentRepository deployments, AuditService audit) {
+                              DeploymentRepository deployments, SharedFlowDeploymentRepository sharedFlowDeployments,
+                              AuditService audit) {
         this.environments = environments;
         this.organizations = organizations;
         this.deployments = deployments;
+        this.sharedFlowDeployments = sharedFlowDeployments;
         this.audit = audit;
     }
 
@@ -89,9 +93,9 @@ public class EnvironmentService {
     public void delete(String orgName, String envName) {
         Organization org = organizations.getActive(orgName);
         Environment env = find(org, envName);
-        if (deployments.existsByEnvironment_Id(env.getId())) {
+        if (deployments.existsByEnvironment_Id(env.getId()) || sharedFlowDeployments.existsByEnvironment_Id(env.getId())) {
             throw new BusinessRuleViolationException(
-                    "Environment '%s' has deployed API proxies; undeploy them first".formatted(envName));
+                    "Environment '%s' has deployed API proxies or shared flows; undeploy them first".formatted(envName));
         }
         environments.delete(env);
         audit.record(org.getId(), "environment.deleted", RESOURCE_TYPE, envName, Map.of());

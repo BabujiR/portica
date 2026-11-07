@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * configuration the way the synchronizer does, verifying routes appear, swap and disappear live.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "portica.gateway.sync.enabled=false")
+        properties = {"portica.gateway.sync.enabled=false", "portica.gateway.policy.store=memory"})
 class GatewayRoutingIntegrationTest {
 
     private static HttpServer backend;
@@ -73,8 +73,10 @@ class GatewayRoutingIntegrationTest {
     void deploymentsChangeRoutesWithoutRestart() throws Exception {
         String target = "http://127.0.0.1:" + backend.getAddress().getPort();
 
-        // Nothing deployed: 404.
-        assertThat(get("/acme/dev/pets/1", Map.of()).statusCode()).isEqualTo(404);
+        // Nothing deployed: 404. Test classes with the same settings share one Spring context (and so one
+        // registry), so start from a clean environment.
+        registry.remove(List.of("acme/dev"));
+        awaitStatus("/acme/dev/pets/1", 404);
 
         // Deploy revision 1 (no target path).
         registry.apply(env(1, new RuntimeProxy("pets", 1, "/pets", target, "", 2_000, 10_000)));

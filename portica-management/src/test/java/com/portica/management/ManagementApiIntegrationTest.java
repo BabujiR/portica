@@ -289,13 +289,13 @@ class ManagementApiIntegrationTest extends AbstractIntegrationTest {
         String aliceId = userId(alice);
 
         mvc.perform(delete("/api/v1/organizations/{org}/members/{id}", org, aliceId).with(person(alice)))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("BUSINESS_RULE_VIOLATION"));
 
         mvc.perform(put("/api/v1/organizations/{org}/members/{id}/roles", org, aliceId).with(person(alice))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"roles\":[\"VIEWER\"]}"))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableContent());
 
         // With a second admin, Alice can step down.
         mvc.perform(post("/api/v1/organizations/{org}/members", org).with(person(alice))

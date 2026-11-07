@@ -1,6 +1,7 @@
 package com.portica.gateway.runtime;
 
 import com.portica.gateway.config.PorticaGatewayProperties;
+import com.portica.gateway.policy.engine.ProxyBundleCompiler;
 import com.portica.gateway.runtime.RuntimeModel.EnvironmentVersion;
 import com.portica.gateway.runtime.RuntimeModel.RuntimeEnvironmentConfig;
 import com.portica.gateway.runtime.RuntimeModel.RuntimeIndex;
@@ -29,7 +30,7 @@ class RuntimeConfigSynchronizerTest {
 
     private final ManagementClient management = mock(ManagementClient.class);
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
-    private final RuntimeConfigRegistry registry = new RuntimeConfigRegistry(events);
+    private final RuntimeConfigRegistry registry = new RuntimeConfigRegistry(events, new ProxyBundleCompiler(List.of()));
 
     @SuppressWarnings("unchecked")
     private final ObjectProvider<MeterRegistry> noMetrics = mock(ObjectProvider.class);

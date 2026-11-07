@@ -1,7 +1,12 @@
 package com.portica.management.runtime;
 
+import com.portica.common.policy.FlowStep;
+import com.portica.common.policy.PolicyDefinition;
+import com.portica.common.policy.ProxyFlows;
+
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Contract between the management plane and gateways. Gateways keep their own copy of these
@@ -21,7 +26,10 @@ public final class RuntimeDtos {
 
     /** Everything a gateway needs to serve one environment. */
     public record RuntimeEnvironmentConfig(String organization, String environment, long configVersion,
-                                           Instant generatedAt, List<RuntimeProxy> proxies) {
+                                           Instant generatedAt, List<RuntimeProxy> proxies,
+                                           List<RuntimeSharedFlow> sharedFlows, List<RuntimeApiProduct> apiProducts,
+                                           List<RuntimeCredential> credentials,
+                                           List<RuntimeKeyValueMap> keyValueMaps) {
     }
 
     /**
@@ -29,6 +37,33 @@ public final class RuntimeDtos {
      * @param targetPath path prefix on the backend ("" for none), e.g. {@code /v2}
      */
     public record RuntimeProxy(String name, int revision, String basePath, String targetUri, String targetPath,
-                               int connectTimeoutMs, int readTimeoutMs) {
+                               int connectTimeoutMs, int readTimeoutMs, List<PolicyDefinition> policies,
+                               ProxyFlows flows) {
+    }
+
+    /** A shared flow deployed in the environment, callable by FlowCallout policies. */
+    public record RuntimeSharedFlow(String name, int revision, List<PolicyDefinition> policies, List<FlowStep> steps) {
+    }
+
+    /** An API product offered in the environment. */
+    public record RuntimeApiProduct(String name, List<String> proxies, List<String> paths, List<String> scopes,
+                                    RuntimeQuota quota, Map<String, String> attributes) {
+    }
+
+    public record RuntimeQuota(long count, int interval, String timeUnit) {
+    }
+
+    /**
+     * A credential the gateway may honour (approved, of an approved app of an active developer, not yet
+     * expired when the snapshot was built). Only hashes travel; {@code apiProducts} lists the products
+     * approved for it that are offered in this environment.
+     */
+    public record RuntimeCredential(String id, String keyHash, String secretHash, Instant expiresAt, String appId,
+                                    String appName, Map<String, String> appAttributes, String developerId,
+                                    String developerEmail, List<String> apiProducts) {
+    }
+
+    /** A key value map readable in this environment, with plain (decrypted) values. */
+    public record RuntimeKeyValueMap(String name, String scope, boolean encrypted, Map<String, String> entries) {
     }
 }

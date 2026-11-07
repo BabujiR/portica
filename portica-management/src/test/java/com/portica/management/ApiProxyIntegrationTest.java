@@ -95,7 +95,7 @@ class ApiProxyIntegrationTest extends AbstractIntegrationTest {
 
         // r2 needs its target server in dev.
         deploy(org, "dev", "orders", 2, person(alice))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(containsString("orders-backend")));
 
         mvc.perform(post("/api/v1/organizations/{org}/environments/dev/target-servers", org).with(person(alice))
@@ -123,13 +123,13 @@ class ApiProxyIntegrationTest extends AbstractIntegrationTest {
         // Live resources are protected.
         mvc.perform(delete("/api/v1/organizations/{org}/environments/dev/target-servers/orders-backend", org)
                         .with(person(alice)))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableContent());
         mvc.perform(delete("/api/v1/organizations/{org}/apis/orders/revisions/2", org).with(person(alice)))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableContent());
         mvc.perform(delete("/api/v1/organizations/{org}/apis/orders", org).with(person(alice)))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableContent());
         mvc.perform(delete("/api/v1/organizations/{org}/environments/dev", org).with(person(alice)))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableContent());
 
         mvc.perform(get("/api/v1/organizations/{org}/apis/orders/deployments", org).with(person(alice)))
                 .andExpect(jsonPath("$[0].environment").value("dev"))
