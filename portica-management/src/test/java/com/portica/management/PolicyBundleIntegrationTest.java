@@ -171,7 +171,7 @@ class PolicyBundleIntegrationTest extends AbstractIntegrationTest {
     void policyTypeCatalogListsEveryPolicy() throws Exception {
         mvc.perform(get("/api/v1/policy-types").with(person(uniqueName("bob"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(17))
+                .andExpect(jsonPath("$.length()").value(18))
                 .andExpect(jsonPath("$[?(@.type == 'Quota')].configFields[*]").value(hasItem("identifier")))
                 .andExpect(jsonPath("$[?(@.type == 'VerifyAPIKey')].category").value(hasItem("Security")));
         mvc.perform(get("/api/v1/policy-types")).andExpect(status().isUnauthorized());

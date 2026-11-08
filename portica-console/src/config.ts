@@ -2,6 +2,8 @@
 export interface PorticaConfig {
   apiBaseUrl: string;
   gatewayUrl: string;
+  /** The developer portal backend (portica-portal). */
+  portalApiUrl: string;
   oidcAuthority: string;
   oidcClientId: string;
 }
@@ -22,6 +24,7 @@ function pick(runtimeValue: string | undefined, buildValue: string | undefined, 
 export const config: PorticaConfig = {
   apiBaseUrl: pick(runtime.apiBaseUrl, import.meta.env.VITE_API_BASE_URL, 'http://localhost:8080'),
   gatewayUrl: pick(runtime.gatewayUrl, import.meta.env.VITE_GATEWAY_URL, 'http://localhost:8081'),
+  portalApiUrl: pick(runtime.portalApiUrl, import.meta.env.VITE_PORTAL_API_URL, 'http://localhost:8085'),
   oidcAuthority: pick(runtime.oidcAuthority, import.meta.env.VITE_OIDC_AUTHORITY, 'http://localhost:8180/realms/portica'),
   oidcClientId: runtime.oidcClientId || import.meta.env.VITE_OIDC_CLIENT_ID || 'portica-console',
 };

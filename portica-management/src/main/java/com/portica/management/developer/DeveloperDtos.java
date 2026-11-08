@@ -105,12 +105,30 @@ public final class DeveloperDtos {
 
     /** A credential as listed later: the key is identified by its id and first characters only. */
     public record CredentialResponse(UUID id, String keyPrefix, CredentialStatus status, Instant expiresAt,
-                                     boolean expired, List<ProductGrantResponse> apiProducts, Instant createdAt) {
+                                     boolean expired, List<ProductGrantResponse> apiProducts, Instant createdAt,
+                                     List<CertificateResponse> certificates) {
 
         public static CredentialResponse from(AppCredential c, Instant now) {
             return new CredentialResponse(c.getId(), c.getKeyPrefix(), c.getStatus(), c.getExpiresAt(),
-                    c.isExpired(now), c.getProducts().stream().map(ProductGrantResponse::from).toList(), c.getCreatedAt());
+                    c.isExpired(now), c.getProducts().stream().map(ProductGrantResponse::from).toList(), c.getCreatedAt(),
+                    c.getCertificates().stream().map(CertificateResponse::from).toList());
         }
+    }
+
+    /** A client certificate registered on a credential, for mutual TLS at the gateway. */
+    public record CertificateResponse(String fingerprint, String subject, String issuer, String serialNumber,
+                                      Instant notBefore, Instant notAfter, Instant createdAt) {
+
+        public static CertificateResponse from(AppCertificate c) {
+            return new CertificateResponse(c.getFingerprint(), c.getSubject(), c.getIssuer(), c.getSerialNumber(),
+                    c.getNotBefore(), c.getNotAfter(), c.getCreatedAt());
+        }
+    }
+
+    public record AddCertificateRequest(
+            @NotBlank @Size(max = 16_384)
+            @Schema(description = "The client certificate, PEM (-----BEGIN CERTIFICATE-----). Only the first certificate is registered.")
+            String certificate) {
     }
 
     /** A newly issued credential. Store the secret now: Portica keeps only hashes and can't show it again. */
@@ -118,7 +136,7 @@ public final class DeveloperDtos {
                                            CredentialStatus status, Instant expiresAt,
                                            List<ProductGrantResponse> apiProducts) {
 
-        static IssuedCredentialResponse from(IssuedCredential issued) {
+        public static IssuedCredentialResponse from(IssuedCredential issued) {
             AppCredential c = issued.credential();
             return new IssuedCredentialResponse(c.getId(), issued.consumerKey(), issued.consumerSecret(),
                     c.getKeyPrefix(), c.getStatus(), c.getExpiresAt(),

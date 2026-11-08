@@ -14,6 +14,7 @@ RUN chmod +x /docker-entrypoint.d/40-portica-config.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 ENV PORTICA_API_BASE_URL=http://localhost:8080 \
     PORTICA_GATEWAY_URL=http://localhost:8081 \
+    PORTICA_PORTAL_API_URL=http://localhost:8085 \
     PORTICA_OIDC_AUTHORITY=http://localhost:8180/realms/portica \
     PORTICA_OIDC_CLIENT_ID=portica-console
 EXPOSE 80

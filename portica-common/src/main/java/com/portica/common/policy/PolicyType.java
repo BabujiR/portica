@@ -16,6 +16,7 @@ import com.portica.common.policy.config.ResponseCacheConfig;
 import com.portica.common.policy.config.ServiceCalloutConfig;
 import com.portica.common.policy.config.SpikeArrestConfig;
 import com.portica.common.policy.config.VerifyApiKeyConfig;
+import com.portica.common.policy.config.VerifyClientCertificateConfig;
 import com.portica.common.policy.config.VerifyJwtConfig;
 import com.portica.common.policy.config.XmlToJsonConfig;
 
@@ -29,6 +30,8 @@ public enum PolicyType {
             "Requires a valid API key and exposes the calling app in variables."),
     OAUTH_V2("OAuthV2", "Security", OAuthV2Config.class,
             "Requires a valid OAuth 2.0 bearer access token (Portica-issued or external JWT) and optional scopes."),
+    VERIFY_CLIENT_CERTIFICATE("VerifyClientCertificate", "Security", VerifyClientCertificateConfig.class,
+            "Identifies the app by its TLS client certificate (mutual TLS) and checks its API products."),
     VERIFY_JWT("VerifyJWT", "Security", VerifyJwtConfig.class,
             "Verifies a signed JWT's signature and claims."),
     ACCESS_CONTROL("AccessControl", "Security", AccessControlConfig.class,
@@ -40,7 +43,7 @@ public enum PolicyType {
     QUOTA("Quota", "Traffic management", QuotaConfig.class,
             "Limits requests per time window across all gateway instances."),
     SPIKE_ARREST("SpikeArrest", "Traffic management", SpikeArrestConfig.class,
-            "Smooths sudden traffic spikes per gateway instance."),
+            "Smooths sudden traffic spikes, shared by all gateway instances through Redis."),
     RESPONSE_CACHE("ResponseCache", "Traffic management", ResponseCacheConfig.class,
             "Serves repeated requests from a shared cache."),
     CORS("CORS", "Mediation", CorsConfig.class,

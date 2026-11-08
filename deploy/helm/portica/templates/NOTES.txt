@@ -1,0 +1,12 @@
+Portica {{ .Chart.AppVersion }} is deployed as release {{ .Release.Name }}.
+
+  Console and developer portal: {{ .Values.urls.console }}  (portal: {{ .Values.urls.console }}/portal/<organization>)
+  Management API:               {{ .Values.urls.api }}/api/v1
+  API gateway:                  {{ .Values.urls.gateway }}/<organization>/<environment>/<base path>
+{{- if .Values.gateway.tls.enabled }}
+  Gateway TLS port {{ .Values.gateway.tls.port }} (client certificates: {{ .Values.gateway.tls.clientAuth }})
+{{- end }}
+
+Keycloak needs the realm from infra/keycloak/portica-realm.json (clients portica-console, portica-gateway,
+portica-portal; realm roles portica-platform-admin, portica-runtime, portica-portal) with production secrets.
+See SECURITY.md for the production checklist.

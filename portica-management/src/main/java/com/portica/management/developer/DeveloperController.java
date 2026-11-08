@@ -1,6 +1,7 @@
 package com.portica.management.developer;
 
 import com.portica.common.api.PageResponse;
+import com.portica.management.developer.DeveloperDtos.AddCertificateRequest;
 import com.portica.management.developer.DeveloperDtos.AddProductRequest;
 import com.portica.management.developer.DeveloperDtos.AppResponse;
 import com.portica.management.developer.DeveloperDtos.CreateAppRequest;
@@ -214,6 +215,26 @@ public class DeveloperController {
                                           @PathVariable UUID keyId) {
         developers.deleteCredential(org, email, app, keyId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/developers/{email}/apps/{app}/keys/{keyId}/certificates")
+    @PreAuthorize("@authz.hasPermission(#org, 'DEVELOPER_WRITE')")
+    @Operation(summary = "Register a TLS client certificate on a credential",
+            description = "Clients presenting this certificate to the gateway are identified as the app by VerifyClientCertificate.")
+    public ResponseEntity<CredentialResponse> addCertificate(@PathVariable String org, @PathVariable String email,
+                                                             @PathVariable String app, @PathVariable UUID keyId,
+                                                             @Valid @RequestBody AddCertificateRequest request) {
+        AppCredential credential = developers.addCertificate(org, email, app, keyId, request.certificate());
+        return ResponseEntity.status(201).body(CredentialResponse.from(credential, developers.now()));
+    }
+
+    @DeleteMapping("/developers/{email}/apps/{app}/keys/{keyId}/certificates/{fingerprint}")
+    @PreAuthorize("@authz.hasPermission(#org, 'DEVELOPER_WRITE')")
+    @Operation(summary = "Remove a client certificate from a credential")
+    public CredentialResponse removeCertificate(@PathVariable String org, @PathVariable String email,
+                                                @PathVariable String app, @PathVariable UUID keyId,
+                                                @PathVariable String fingerprint) {
+        return CredentialResponse.from(developers.removeCertificate(org, email, app, keyId, fingerprint), developers.now());
     }
 
     @PostMapping("/developers/{email}/apps/{app}/keys/{keyId}/apiproducts")

@@ -5,15 +5,15 @@ import {
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  CheckOutlined, DeleteOutlined, EditOutlined, KeyOutlined, MoreOutlined, PlusOutlined, SearchOutlined, StopOutlined,
-  SyncOutlined,
+  CheckOutlined, DeleteOutlined, EditOutlined, KeyOutlined, MoreOutlined, PlusOutlined, SafetyCertificateOutlined,
+  SearchOutlined, StopOutlined, SyncOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  addKeyProduct, createKey, deleteApp, deleteKey, getApp, listAllApps, listProducts, removeKeyProduct, rotateKey,
-  setKeyProductStatus, updateApp, updateKey,
+  addCertificate, addKeyProduct, createKey, deleteApp, deleteKey, getApp, listAllApps, listProducts, removeCertificate,
+  removeKeyProduct, rotateKey, setKeyProductStatus, updateApp, updateKey,
 } from '../../api/endpoints';
 import type { Credential, DeveloperApp, GrantStatus, IssuedCredential } from '../../api/types';
 import { useWorkspace } from '../../app/Workspace';
@@ -99,6 +99,7 @@ export function AppDetail() {
   const [rotating, setRotating] = useState<Credential | null>(null);
   const [expiring, setExpiring] = useState<Credential | null>(null);
   const [addingTo, setAddingTo] = useState<Credential | null>(null);
+  const [certifying, setCertifying] = useState<Credential | null>(null);
   const [editing, setEditing] = useState(false);
   const writable = can('DEVELOPER_WRITE');
 
@@ -137,6 +138,7 @@ export function AppDetail() {
   const a = app.data;
   const keyMenu = (c: Credential): MenuProps['items'] => [
     { key: 'add', icon: <PlusOutlined />, label: 'Add API product', onClick: () => setAddingTo(c) },
+    { key: 'certificate', icon: <SafetyCertificateOutlined />, label: 'Register client certificate…', onClick: () => setCertifying(c) },
     { key: 'rotate', icon: <SyncOutlined />, label: 'Rotate…', disabled: c.status === 'REVOKED', onClick: () => setRotating(c) },
     { key: 'expiry', icon: <EditOutlined />, label: 'Set expiry…', onClick: () => setExpiring(c) },
     c.status === 'APPROVED'
@@ -243,6 +245,26 @@ export function AppDetail() {
                         ),
                       },
                       {
+                        title: 'Client certificates', key: 'certificates', render: (_, c) => (
+                          <Flex wrap gap={4}>
+                            {(c.certificates ?? []).length === 0 && <Typography.Text type="secondary">none</Typography.Text>}
+                            {(c.certificates ?? []).map((cert) => (
+                              <Tooltip key={cert.fingerprint}
+                                title={<>{cert.subject}<br />issued by {cert.issuer}<br />expires {dateTime(cert.notAfter)}<br />SHA-256 {cert.fingerprint}</>}>
+                                <Tag icon={<SafetyCertificateOutlined />} color={dayjs(cert.notAfter).isBefore(dayjs()) ? 'default' : 'blue'}
+                                  closable={writable}
+                                  onClose={(e) => {
+                                    e.preventDefault();
+                                    void run(() => removeCertificate(org, email, appName, c.id, cert.fingerprint), 'Certificate removed');
+                                  }}>
+                                  {cert.subject.replace(/^CN=/, '').split(',')[0]} · {cert.fingerprint.slice(0, 8)}
+                                </Tag>
+                              </Tooltip>
+                            ))}
+                          </Flex>
+                        ),
+                      },
+                      {
                         title: '', key: 'actions', align: 'right', render: (_, c) => writable && (
                           <Dropdown menu={{ items: keyMenu(c) }} trigger={['click']}>
                             <Button size="small" icon={<MoreOutlined />} aria-label={`Actions for key ${c.keyPrefix}`} />
@@ -329,6 +351,25 @@ export function AppDetail() {
               .map((p) => ({ value: p.name, label: `${p.displayName}${p.approvalType === 'MANUAL' ? ' (manual approval)' : ''}` }))} />
           </Form.Item>
           <Button type="primary" htmlType="submit">Add</Button>
+        </Form>
+      </Modal>
+
+      {/* Register client certificate */}
+      <Modal open={!!certifying} title={`Client certificate for key ${certifying?.keyPrefix ?? ''}…`} footer={null}
+        onCancel={() => setCertifying(null)} destroyOnClose>
+        <Typography.Paragraph type="secondary">
+          Clients presenting this certificate over mutual TLS are identified as this app by the VerifyClientCertificate policy,
+          with this key's API products. Only the public certificate is stored.
+        </Typography.Paragraph>
+        <Form<{ certificate: string }>
+          layout="vertical"
+          onFinish={(v) => certifying && void run(() => addCertificate(org, email, appName, certifying.id, v.certificate.trim()), 'Certificate registered')
+            .then((r) => r && setCertifying(null))}
+        >
+          <Form.Item name="certificate" label="Certificate (PEM)" rules={[{ required: true }]}>
+            <Input.TextArea autoSize={{ minRows: 6, maxRows: 14 }} placeholder="-----BEGIN CERTIFICATE-----" spellCheck={false} />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" icon={<SafetyCertificateOutlined />}>Register</Button>
         </Form>
       </Modal>
 

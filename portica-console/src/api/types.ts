@@ -85,6 +85,26 @@ export interface TargetServer extends Audit {
   enabled: boolean;
   description?: string;
   baseUri: string;
+  tls?: TargetTls | null;
+}
+
+/** TLS settings of an HTTPS target server as returned (the client key is never sent back). */
+export interface TargetTls {
+  clientCertificate?: string | null;
+  clientCertificateSubject?: string | null;
+  clientCertificateNotAfter?: string | null;
+  clientKeyConfigured: boolean;
+  trustedCertificates?: string | null;
+  trustedCertificateCount: number;
+  verifyHostname: boolean;
+}
+
+/** TLS settings as sent: leave clientKey out to keep the stored key (with an unchanged certificate). */
+export interface TargetTlsRequest {
+  clientCertificate?: string;
+  clientKey?: string;
+  trustedCertificates?: string;
+  verifyHostname?: boolean;
 }
 
 // ------------------------------------------------------------------ proxies and policies
@@ -278,6 +298,18 @@ export interface Credential {
   expiresAt?: string | null;
   expired: boolean;
   apiProducts: ProductGrant[];
+  createdAt: string;
+  certificates?: AppCertificate[];
+}
+
+/** A TLS client certificate registered on a credential (mutual TLS at the gateway). */
+export interface AppCertificate {
+  fingerprint: string;
+  subject: string;
+  issuer: string;
+  serialNumber: string;
+  notBefore: string;
+  notAfter: string;
   createdAt: string;
 }
 

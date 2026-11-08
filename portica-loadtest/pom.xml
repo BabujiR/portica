@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.portica</groupId>
+        <artifactId>portica-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>portica-loadtest</artifactId>
+    <name>Portica :: Load test</name>
+    <description>Gatling simulations that check the gateway's latency targets. Built only with -Pload-test.</description>
+
+    <properties>
+        <gatling.version>3.13.5</gatling.version>
+        <gatling-maven-plugin.version>4.12.2</gatling-maven-plugin.version>
+        <!-- not a library: nothing to deploy -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.gatling.highcharts</groupId>
+            <artifactId>gatling-charts-highcharts</artifactId>
+            <version>${gatling.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>io.gatling</groupId>
+                <artifactId>gatling-maven-plugin</artifactId>
+                <version>${gatling-maven-plugin.version}</version>
+                <configuration>
+                    <simulationClass>${simulation}</simulationClass>
+                    <runMultipleSimulations>false</runMultipleSimulations>
+                    <!-- assertion failures fail the build -->
+                    <failOnError>true</failOnError>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>default-simulation</id>
+            <activation>
+                <property>
+                    <name>!simulation</name>
+                </property>
+            </activation>
+            <properties>
+                <simulation>com.portica.loadtest.GatewayLatencySimulation</simulation>
+            </properties>
+        </profile>
+    </profiles>
+</project>

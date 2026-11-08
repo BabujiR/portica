@@ -128,7 +128,9 @@ public class PolicyEngine {
         ProxyRequest proxyRequest = new ProxyRequest(request.getMethod(), rawPath, request.getURI().getRawQuery(),
                 suffix, headers);
         String requestId = request.getHeaders().getFirst(PorticaHeaders.REQUEST_ID);
-        return new MessageContext(requestId, proxy.info(), proxyRequest, clientIp(request));
+        MessageContext ctx = new MessageContext(requestId, proxy.info(), proxyRequest, clientIp(request));
+        ClientCertificates.publish(ctx, request.getSslInfo());
+        return ctx;
     }
 
     private String clientIp(ServerHttpRequest request) {

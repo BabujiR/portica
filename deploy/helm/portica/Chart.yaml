@@ -1,0 +1,8 @@
+apiVersion: v2
+name: portica
+description: Portica, the front door to your APIs - management API, API gateway, AI gateway, MCP, analytics ingestion, developer portal and console.
+type: application
+version: 0.8.0
+appVersion: "0.1.0"
+keywords: [api-gateway, api-management, mcp, ai-gateway]
+home: https://github.com/BabujiR/portica

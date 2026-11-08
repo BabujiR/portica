@@ -6,7 +6,7 @@ import com.portica.gateway.runtime.RuntimeModel.RuntimeQuota;
 /**
  * Flow variables describing the calling app, set by VerifyAPIKey and OAuthV2. Each policy sets its own
  * prefixed copies ({@code verifyapikey.<name>.*}, {@code oauthv2.<name>.*}) and the shared ones that
- * other policies read: {@code client_id}, {@code developer.app.name}, {@code developer.email},
+ * other policies read: {@code client_id}, {@code developer.app.name}, {@code developer.app.id}, {@code developer.email},
  * {@code apiproduct.name} and {@code apiproduct.quota.limit/interval/timeunit} (Quota with useProductQuota).
  */
 public final class AppVariables {
@@ -26,6 +26,7 @@ public final class AppVariables {
 
         ctx.setVariable("client_id", app.clientId());
         ctx.setVariable("developer.app.name", app.appName());
+        ctx.setVariable("developer.app.id", app.appId());
         ctx.setVariable("developer.email", app.developerEmail());
         ctx.setVariable("apiproduct.name", product == null ? null : product.name());
         RuntimeQuota quota = product == null ? null : product.quota();

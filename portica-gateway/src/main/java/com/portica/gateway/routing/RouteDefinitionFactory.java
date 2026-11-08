@@ -31,6 +31,8 @@ public final class RouteDefinitionFactory {
     public static final String METADATA_ENVIRONMENT = "portica.environment";
     public static final String METADATA_PROXY = "portica.proxy";
     public static final String METADATA_REVISION = "portica.revision";
+    /** Fingerprint of the target's TLS settings (mutual TLS / custom trust); the material stays in the registry. */
+    public static final String METADATA_TARGET_TLS = "portica.target-tls";
 
     private RouteDefinitionFactory() {
     }
@@ -82,6 +84,9 @@ public final class RouteDefinitionFactory {
         metadata.put(METADATA_ENVIRONMENT, env);
         metadata.put(METADATA_PROXY, proxy.name());
         metadata.put(METADATA_REVISION, proxy.revision());
+        if (proxy.targetTls() != null) {
+            metadata.put(METADATA_TARGET_TLS, proxy.targetTls().fingerprint());
+        }
         route.setMetadata(metadata);
         return route;
     }

@@ -1,9 +1,11 @@
 package com.portica.management.developer;
 
 import com.portica.common.error.BusinessRuleViolationException;
+import com.portica.common.error.InvalidRequestException;
 import com.portica.common.error.ResourceConflictException;
 import com.portica.common.error.ResourceNotFoundException;
 import com.portica.common.security.Hashing;
+import com.portica.common.security.Pem;
 import com.portica.management.audit.AuditService;
 import com.portica.management.developer.DeveloperDtos.CreateAppRequest;
 import com.portica.management.developer.DeveloperDtos.CreateCredentialRequest;
@@ -25,6 +27,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -47,6 +50,7 @@ public class DeveloperService {
     private final DeveloperRepository developers;
     private final DeveloperAppRepository apps;
     private final AppCredentialRepository credentials;
+    private final AppCertificateRepository certificateRepository;
     private final ApiProductService products;
     private final OrganizationFinder organizations;
     private final CredentialGenerator generator;
@@ -55,12 +59,14 @@ public class DeveloperService {
     private final Clock clock;
 
     public DeveloperService(DeveloperRepository developers, DeveloperAppRepository apps,
-                            AppCredentialRepository credentials, ApiProductService products,
+                            AppCredentialRepository credentials, AppCertificateRepository certificateRepository,
+                            ApiProductService products,
                             OrganizationFinder organizations, CredentialGenerator generator,
                             RuntimeChanges runtimeChanges, AuditService audit) {
         this.developers = developers;
         this.apps = apps;
         this.credentials = credentials;
+        this.certificateRepository = certificateRepository;
         this.products = products;
         this.organizations = organizations;
         this.generator = generator;
@@ -284,6 +290,52 @@ public class DeveloperService {
         audit.record(organization.getId(), "app-credential.deleted", CREDENTIAL, credentialName(app, c), Map.of());
     }
 
+    /**
+     * Registers a TLS client certificate on a credential. A certificate identifies one credential across
+     * Portica; expired certificates and anything that isn't a single valid X.509 certificate are refused.
+     */
+    @Transactional
+    public AppCredential addCertificate(String org, String email, String appName, UUID keyId, String pem) {
+        Organization organization = organizations.getActive(org);
+        DeveloperApp app = findApp(organization, email, appName);
+        AppCredential c = findCredential(app, keyId);
+        X509Certificate certificate;
+        try {
+            certificate = Pem.certificates(pem).get(0);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidRequestException(e.getMessage());
+        }
+        if (certificate.getNotAfter().toInstant().isBefore(now())) {
+            throw new InvalidRequestException("The certificate expired on " + certificate.getNotAfter().toInstant());
+        }
+        String fingerprint = Pem.fingerprint(certificate);
+        if (certificateRepository.existsByFingerprint(fingerprint)) {
+            throw ResourceConflictException.alreadyExists("AppCertificate", fingerprint);
+        }
+        c.addCertificate(fingerprint, certificate.getSubjectX500Principal().getName(),
+                certificate.getIssuerX500Principal().getName(), certificate.getSerialNumber().toString(16),
+                certificate.getNotBefore().toInstant(), certificate.getNotAfter().toInstant(), Pem.encode(certificate));
+        credentials.saveAndFlush(c);
+        runtimeChanges.organizationChanged(organization);
+        audit.record(organization.getId(), "app-credential.certificate-added", CREDENTIAL, credentialName(app, c),
+                Map.of("fingerprint", fingerprint, "subject", certificate.getSubjectX500Principal().getName()));
+        return initialized(c);
+    }
+
+    @Transactional
+    public AppCredential removeCertificate(String org, String email, String appName, UUID keyId, String fingerprint) {
+        Organization organization = organizations.getActive(org);
+        DeveloperApp app = findApp(organization, email, appName);
+        AppCredential c = findCredential(app, keyId);
+        if (!c.removeCertificate(fingerprint.toLowerCase(java.util.Locale.ROOT))) {
+            throw new ResourceNotFoundException("AppCertificate", fingerprint);
+        }
+        runtimeChanges.organizationChanged(organization);
+        audit.record(organization.getId(), "app-credential.certificate-removed", CREDENTIAL, credentialName(app, c),
+                Map.of("fingerprint", fingerprint));
+        return initialized(c);
+    }
+
     /** Adds a product to a credential: approved at once for AUTO products, pending for MANUAL ones. */
     @Transactional
     public AppCredential addProduct(String org, String email, String appName, UUID keyId, String productName) {
@@ -340,6 +392,7 @@ public class DeveloperService {
     /** Loads what responses read, while the transaction is still open (open-in-view is off). */
     private static AppCredential initialized(AppCredential c) {
         c.getProducts().forEach(g -> g.getApiProduct().getName());
+        c.getCertificates().size();
         return c;
     }
 

@@ -67,6 +67,27 @@ public class ManagementApiClient {
         return json.readValue(response.body(), type);
     }
 
+    /** A raw response: status, content type and body as text. */
+    public record Response(int status, String contentType, String body) {
+    }
+
+    /**
+     * Any request, with a JSON body (or null) and extra headers; the response is returned whatever its
+     * status, so callers can pass problems through (the developer portal forwards them to browsers).
+     */
+    public Response exchange(String method, String path, String jsonBody, java.util.Map<String, String> headers) {
+        HttpRequest.BodyPublisher body = jsonBody == null ? HttpRequest.BodyPublishers.noBody()
+                : HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8);
+        HttpRequest.Builder builder = HttpRequest.newBuilder(resolve(path)).method(method, body);
+        if (jsonBody != null) {
+            builder.header("Content-Type", "application/json");
+        }
+        headers.forEach(builder::header);
+        HttpResponse<String> response = send(builder);
+        return new Response(response.statusCode(),
+                response.headers().firstValue("Content-Type").orElse("application/json"), response.body());
+    }
+
     private URI resolve(String path) {
         return baseUri.resolve(path.startsWith("/") ? path.substring(1) : path);
     }

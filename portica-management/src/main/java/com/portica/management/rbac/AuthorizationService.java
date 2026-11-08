@@ -34,6 +34,11 @@ public class AuthorizationService {
     }
 
     /** Gateways (service accounts with the runtime role) and platform admins may read runtime configuration. */
+    /** The developer portal's service account (it passes the signed-in developer's e-mail address). */
+    public boolean isPortalClient() {
+        return currentUserService.isPortalClient();
+    }
+
     public boolean canReadRuntimeConfig() {
         return currentUserService.isRuntimeClient() || currentUserService.isPlatformAdmin();
     }
