@@ -4,7 +4,7 @@ import type { MenuProps } from 'antd';
 import {
   ApiOutlined, AppstoreOutlined, AuditOutlined, LineChartOutlined, RobotOutlined, ToolOutlined, CloudServerOutlined, ClusterOutlined, DashboardOutlined, DatabaseOutlined,
   LogoutOutlined, MobileOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SafetyOutlined, ShareAltOutlined,
-  SunOutlined, TeamOutlined, UserOutlined,
+  SunOutlined, TeamOutlined, UserOutlined, GlobalOutlined,
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
@@ -198,6 +198,7 @@ export function AppLayout() {
                       ),
                     },
                     { type: 'divider' },
+                    { key: 'portal', icon: <GlobalOutlined />, label: <Link to={`/portal/${org}`}>Developer portal</Link> },
                     { key: 'logout', icon: <LogoutOutlined />, label: 'Sign out', onClick: () => void logout() },
                   ],
                 }}

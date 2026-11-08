@@ -192,6 +192,26 @@ services:
     ports:
       - "8083:8083"
 
+  # Developer portal backend (Phase 8); the portal UI is part of the console at /portal/{org}
+  portal:
+    profiles: ["app"]
+    build:
+      context: ./portica-portal
+    image: portica/portica-portal:local
+    depends_on:
+      - management
+      - gateway
+    environment:
+      PORTICA_MANAGEMENT_URL: http://management:8080
+      PORTICA_GATEWAY_INTERNAL_URL: http://gateway:8081
+      PORTICA_OIDC_ISSUER: http://localhost:8180/realms/portica
+      PORTICA_OIDC_JWKS: http://keycloak:8080/realms/portica/protocol/openid-connect/certs
+      PORTICA_OIDC_TOKEN_URI: http://keycloak:8080/realms/portica/protocol/openid-connect/token
+      PORTICA_PORTAL_CLIENT_SECRET: ${PORTICA_PORTAL_CLIENT_SECRET:-portica-portal-dev-secret}
+      PORTICA_PORTAL_ORIGINS: http://localhost:5173
+    ports:
+      - "8085:8085"
+
   # Web console (Phase 5). For development, run it with `npm run dev` in portica-console instead;
   # this container serves the production build: docker compose --profile console up -d --build console
   console:
@@ -203,6 +223,7 @@ services:
       # URLs as the browser sees them (not container names).
       PORTICA_API_BASE_URL: http://localhost:8080
       PORTICA_GATEWAY_URL: http://localhost:8081
+      PORTICA_PORTAL_API_URL: http://localhost:8085
       PORTICA_OIDC_AUTHORITY: http://localhost:8180/realms/portica
       PORTICA_OIDC_CLIENT_ID: portica-console
     ports:

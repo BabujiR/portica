@@ -15,6 +15,9 @@ import com.portica.management.runtime.RuntimeDtos.RuntimeIndex;
 import com.portica.management.runtime.RuntimeDtos.RuntimeProxy;
 import com.portica.management.runtime.RuntimeDtos.RuntimeApiProduct;
 import com.portica.management.runtime.RuntimeDtos.RuntimeCredential;
+import com.portica.management.runtime.RuntimeDtos.RuntimeTargetTls;
+import com.portica.management.developer.AppCertificate;
+import com.portica.management.kvm.KvmCipher;
 import com.portica.management.runtime.RuntimeDtos.RuntimeKeyValueMap;
 import com.portica.management.runtime.RuntimeDtos.RuntimeQuota;
 import com.portica.management.runtime.RuntimeDtos.RuntimeSharedFlow;
@@ -61,13 +64,15 @@ public class RuntimeConfigService {
     private final AppCredentialRepository credentials;
     private final KeyValueMapService keyValueMaps;
     private final ServicesRuntime services;
+    private final KvmCipher cipher;
 
     public RuntimeConfigService(EnvironmentRepository environmentRepository, EnvironmentFinder environments,
                                 DeploymentRepository deployments, TargetServerRepository targetServers,
                                 SharedFlowDeploymentRepository sharedFlowDeployments, ApiProductRepository products,
                                 AppCredentialRepository credentials, KeyValueMapService keyValueMaps,
-                                ServicesRuntime services) {
+                                ServicesRuntime services, KvmCipher cipher) {
         this.services = services;
+        this.cipher = cipher;
         this.environmentRepository = environmentRepository;
         this.environments = environments;
         this.deployments = deployments;
@@ -103,6 +108,7 @@ public class RuntimeConfigService {
             ApiProxyRevision revision = deployment.getRevision();
             TargetSpec target = revision.target();
             String targetUri = target.url();
+            RuntimeTargetTls targetTls = null;
             if (target.usesServer()) {
                 TargetServer server = servers.get(target.server());
                 if (server == null || !server.isEnabled()) {
@@ -112,10 +118,11 @@ public class RuntimeConfigService {
                     continue;
                 }
                 targetUri = server.baseUri();
+                targetTls = targetTls(server);
             }
             proxies.add(new RuntimeProxy(deployment.getApiProxy().getName(), revision.getRevision(),
                     revision.getBasePath(), targetUri, target.path(), revision.getConnectTimeoutMs(),
-                    revision.getReadTimeoutMs(), revision.policies(), revision.flows()));
+                    revision.getReadTimeoutMs(), revision.policies(), revision.flows(), targetTls));
         }
         // AI proxies and MCP servers reach traffic through generated gateway proxies (Phase 7)
         proxies.addAll(services.gatewayProxies(environment));
@@ -129,7 +136,7 @@ public class RuntimeConfigService {
         Set<java.util.UUID> offeredIds = offered.stream().map(ApiProduct::getId).collect(Collectors.toSet());
         List<RuntimeCredential> liveCredentials = credentials.findLive(environment.getOrganization().getId()).stream()
                 .filter(c -> !c.isExpired(now))
-                .map(c -> runtimeCredential(c, offeredIds))
+                .map(c -> runtimeCredential(c, offeredIds, now))
                 .toList();
         List<RuntimeKeyValueMap> maps = keyValueMaps.runtimeMaps(environment).stream()
                 .map(m -> new RuntimeKeyValueMap(m.name(), m.scope(), m.encrypted(), m.entries()))
@@ -168,7 +175,19 @@ public class RuntimeConfigService {
                 q == null ? null : new RuntimeQuota(q.count(), q.interval(), q.timeUnit()), p.attributes());
     }
 
-    private static RuntimeCredential runtimeCredential(AppCredential c, Set<java.util.UUID> offeredProductIds) {
+    /** The target server's TLS settings with the client key decrypted, or null for the gateway defaults. */
+    private RuntimeTargetTls targetTls(TargetServer server) {
+        if (!server.hasCustomTls() || server.getProtocol() != com.portica.management.targetserver.TargetServerProtocol.HTTPS) {
+            return null;
+        }
+        String key = server.getTlsClientKeyEncrypted() == null ? null
+                : cipher.decrypt(server.getTlsClientKeyEncrypted(), server.keyAssociatedData());
+        return new RuntimeTargetTls(server.getTlsClientCertificate(), key, server.getTlsTrustedCertificates(),
+                server.isTlsVerifyHostname());
+    }
+
+    private static RuntimeCredential runtimeCredential(AppCredential c, Set<java.util.UUID> offeredProductIds,
+                                                       Instant now) {
         DeveloperApp app = c.getApp();
         List<String> granted = c.getProducts().stream()
                 .filter(g -> g.getStatus() == ProductGrantStatus.APPROVED)
@@ -177,6 +196,8 @@ public class RuntimeConfigService {
                 .toList();
         return new RuntimeCredential(c.getId().toString(), c.getKeyHash(), c.getSecretHash(), c.getExpiresAt(),
                 app.getId().toString(), app.getName(), app.attributes(), app.getDeveloper().getId().toString(),
-                app.getDeveloper().getEmail(), granted);
+                app.getDeveloper().getEmail(), granted, c.getCertificates().stream()
+                        .filter(cert -> cert.getNotAfter().isAfter(now))
+                        .map(AppCertificate::getFingerprint).toList());
     }
 }

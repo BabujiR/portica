@@ -51,7 +51,9 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,gateway
+        # The gateway endpoint (/actuator/gateway/routes) lists backend URLs: expose it only on an internal
+        # management port, e.g. MANAGEMENT_SERVER_PORT=8091 MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE=health,info,prometheus,gateway
+        include: health,info,prometheus
   endpoint:
     health:
       probes:

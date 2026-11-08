@@ -82,14 +82,23 @@ public final class RuntimeModel {
         }
     }
 
+    /**
+     * A deployed proxy. {@code targetTls}: client certificate and trusted CAs for mutual TLS to the target
+     * (target servers only), or null for the gateway's default TLS client.
+     */
     public record RuntimeProxy(String name, int revision, String basePath, String targetUri, String targetPath,
                                int connectTimeoutMs, int readTimeoutMs, List<PolicyDefinition> policies,
-                               ProxyFlows flows) {
+                               ProxyFlows flows, RuntimeTargetTls targetTls) {
 
         @JsonCreator
         public RuntimeProxy {
             policies = policies == null ? List.of() : List.copyOf(policies);
             flows = flows == null ? ProxyFlows.EMPTY : flows;
+        }
+
+        public RuntimeProxy(String name, int revision, String basePath, String targetUri, String targetPath,
+                            int connectTimeoutMs, int readTimeoutMs, List<PolicyDefinition> policies, ProxyFlows flows) {
+            this(name, revision, basePath, targetUri, targetPath, connectTimeoutMs, readTimeoutMs, policies, flows, null);
         }
 
         /** Without policies (tests, Phase 2 style). */
@@ -129,13 +138,37 @@ public final class RuntimeModel {
     }
 
     /** A credential the gateway may honour; only SHA-256 hashes of the key and secret are present. */
+    /** {@code certificateFingerprints}: SHA-256 of the client certificates registered on this credential (mTLS). */
     public record RuntimeCredential(String id, String keyHash, String secretHash, Instant expiresAt, String appId,
                                     String appName, Map<String, String> appAttributes, String developerId,
-                                    String developerEmail, List<String> apiProducts) {
+                                    String developerEmail, List<String> apiProducts, List<String> certificateFingerprints) {
 
+        @JsonCreator
         public RuntimeCredential {
             appAttributes = copy(appAttributes);
             apiProducts = apiProducts == null ? List.of() : List.copyOf(apiProducts);
+            certificateFingerprints = certificateFingerprints == null ? List.of() : List.copyOf(certificateFingerprints);
+        }
+
+        public RuntimeCredential(String id, String keyHash, String secretHash, Instant expiresAt, String appId,
+                                 String appName, Map<String, String> appAttributes, String developerId,
+                                 String developerEmail, List<String> apiProducts) {
+            this(id, keyHash, secretHash, expiresAt, appId, appName, appAttributes, developerId, developerEmail,
+                    apiProducts, List.of());
+        }
+    }
+
+    /**
+     * Mutual TLS to a target: the gateway's client certificate chain and PKCS #8 key (PEM, decrypted by the
+     * management plane), CA certificates to trust instead of the JVM defaults, and hostname verification.
+     */
+    public record RuntimeTargetTls(String clientCertificate, String clientKey, String trustedCertificates,
+                                   boolean verifyHostname) {
+
+        /** Identifies the material, so equal settings share one HTTP client. */
+        public String fingerprint() {
+            return com.portica.common.security.Hashing.sha256Hex(String.valueOf(clientCertificate) + "|"
+                    + String.valueOf(clientKey) + "|" + String.valueOf(trustedCertificates) + "|" + verifyHostname);
         }
     }
 

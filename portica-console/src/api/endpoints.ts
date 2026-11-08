@@ -7,7 +7,7 @@ import type {
   ApiProduct, ApiProductRequest, ApiProxy, Credential, Deployment, Developer, DeveloperApp, Environment,
   FlowStep, ImportResult, Operation, IssuedCredential, KeyValueEntry, KeyValueMap, Me, Member, Organization, Page,
   PolicyDefinition, PolicyType, Revision, RevisionRequest, Role, SharedFlow, SharedFlowDeployment,
-  SharedFlowRevision, TargetServer, TargetSpec,
+  SharedFlowRevision, TargetServer, TargetSpec, TargetTlsRequest,
 } from './types';
 
 /** Lists load up to 100 items (the API maximum); tables page and filter them client-side. */
@@ -33,7 +33,8 @@ export const updateEnvironment = (org: string, env: string, body: { displayName?
 export const deleteEnvironment = (org: string, env: string) =>
   api<void>(path('/organizations/{0}/environments/{1}', org, env), { method: 'DELETE' });
 
-export type TargetServerBody = Omit<TargetServer, 'id' | 'baseUri' | 'createdAt' | 'createdBy' | 'updatedAt' | 'updatedBy'>;
+export type TargetServerBody = Omit<TargetServer, 'id' | 'baseUri' | 'tls' | 'createdAt' | 'createdBy' | 'updatedAt' | 'updatedBy'>
+  & { tls?: TargetTlsRequest | null };
 export const listTargetServers = (org: string, env: string) =>
   api<Page<TargetServer>>(path('/organizations/{0}/environments/{1}/target-servers', org, env), { query: ALL });
 export const createTargetServer = (org: string, env: string, body: TargetServerBody) =>
@@ -175,6 +176,11 @@ export const rotateKey = (org: string, email: string, app: string, keyId: string
     { method: 'POST', body });
 export const deleteKey = (org: string, email: string, app: string, keyId: string) =>
   api<void>(`${keys(org, email, app)}/${encodeURIComponent(keyId)}`, { method: 'DELETE' });
+export const addCertificate = (org: string, email: string, app: string, keyId: string, certificate: string) =>
+  api<Credential>(`${keys(org, email, app)}/${encodeURIComponent(keyId)}/certificates`, { method: 'POST', body: { certificate } });
+export const removeCertificate = (org: string, email: string, app: string, keyId: string, fingerprint: string) =>
+  api<Credential>(`${keys(org, email, app)}/${encodeURIComponent(keyId)}/certificates/${encodeURIComponent(fingerprint)}`,
+    { method: 'DELETE' });
 export const addKeyProduct = (org: string, email: string, app: string, keyId: string, apiProduct: string) =>
   api<Credential>(`${keys(org, email, app)}/${encodeURIComponent(keyId)}/apiproducts`, { method: 'POST', body: { apiProduct } });
 export const setKeyProductStatus = (org: string, email: string, app: string, keyId: string, product: string,

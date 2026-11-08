@@ -134,6 +134,25 @@ class DeveloperAppsIntegrationTest {
     // ----------------------------------------------------------------- token endpoint
 
     @Test
+    void guessingAClientSecretIsThrottledPerClientId() throws Exception {
+        int throttled = 0;
+        String retryAfter = null;
+        for (int i = 0; i < 35; i++) {
+            HttpResponse<String> r = token(basic("brute-force-target", "guess-" + i), "grant_type=client_credentials");
+            if (r.statusCode() == 429) {
+                throttled++;
+                retryAfter = r.headers().firstValue("Retry-After").orElse(null);
+            } else {
+                assertThat(r.statusCode()).isEqualTo(401);
+            }
+        }
+        assertThat(throttled).as("30 attempts per minute, then 429").isGreaterThanOrEqualTo(4);
+        assertThat(retryAfter).isNotNull();
+        // other clients are unaffected
+        assertThat(token(basic("gold-key", "gold-secret"), "grant_type=client_credentials").statusCode()).isEqualTo(200);
+    }
+
+    @Test
     void clientCredentialsGrantIssuesABearerToken() throws Exception {
         HttpResponse<String> response = token(basic("gold-key", "gold-secret"), "grant_type=client_credentials");
 

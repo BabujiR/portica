@@ -34,6 +34,11 @@ public class StoreConfiguration {
         AccessTokenStore accessTokenStore(ReactiveStringRedisTemplate redis) {
             return new RedisAccessTokenStore(redis);
         }
+
+        @Bean
+        RateLimiterStore rateLimiterStore(ReactiveStringRedisTemplate redis) {
+            return new RedisRateLimiterStore(redis);
+        }
     }
 
     @Configuration
@@ -42,7 +47,7 @@ public class StoreConfiguration {
 
         Memory() {
             LoggerFactory.getLogger(StoreConfiguration.class)
-                    .warn("Using in-memory quota counters, cache and OAuth tokens: state is per gateway instance");
+                    .warn("Using in-memory quota counters, SpikeArrest, cache and OAuth tokens: state is per gateway instance");
         }
 
         @Bean
@@ -58,6 +63,11 @@ public class StoreConfiguration {
         @Bean
         AccessTokenStore accessTokenStore() {
             return new InMemoryAccessTokenStore();
+        }
+
+        @Bean
+        RateLimiterStore rateLimiterStore() {
+            return new InMemoryRateLimiterStore();
         }
     }
 }

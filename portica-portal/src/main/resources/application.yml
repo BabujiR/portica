@@ -5,6 +5,32 @@ server:
 spring:
   application:
     name: portica-portal
+  threads:
+    virtual:
+      enabled: true   # every request calls the management API or the gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # developers sign in to the portal UI with this identity provider (self-registration enabled)
+          issuer-uri: ${PORTICA_OIDC_ISSUER:http://localhost:8180/realms/portica}
+          # where this service fetches the signing keys (inside a cluster, the identity provider's internal address)
+          jwk-set-uri: ${PORTICA_OIDC_JWKS:http://localhost:8180/realms/portica/protocol/openid-connect/certs}
+
+portica:
+  portal:
+    management-url: ${PORTICA_MANAGEMENT_URL:http://localhost:8080}
+    gateway-url: ${PORTICA_GATEWAY_INTERNAL_URL:http://localhost:8081}
+    allowed-origins: ${PORTICA_PORTAL_ORIGINS:http://localhost:5173}
+    require-verified-email: ${PORTICA_PORTAL_REQUIRE_VERIFIED_EMAIL:true}
+    auth:
+      token-uri: ${PORTICA_OIDC_TOKEN_URI:http://localhost:8180/realms/portica/protocol/openid-connect/token}
+      client-id: ${PORTICA_PORTAL_CLIENT_ID:portica-portal}
+      client-secret: ${PORTICA_PORTAL_CLIENT_SECRET:portica-portal-dev-secret}
+    try-it:
+      timeout: 30s
+      max-body-bytes: 1048576
+      requests-per-minute: 60
 
 management:
   endpoints:

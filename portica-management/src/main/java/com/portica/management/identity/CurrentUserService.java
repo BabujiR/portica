@@ -66,6 +66,10 @@ public class CurrentUserService {
     }
 
     /** True for gateway service accounts that read runtime configuration. */
+    public boolean isPortalClient() {
+        return hasAuthority(securityProperties.portalAuthority());
+    }
+
     public boolean isRuntimeClient() {
         return hasAuthority(securityProperties.runtimeAuthority());
     }
