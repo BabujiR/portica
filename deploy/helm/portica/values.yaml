@@ -1,0 +1,171 @@
+# Portica Helm chart. Infrastructure (PostgreSQL, Redis, Kafka, ClickHouse, Keycloak, optionally Vault)
+# is external: point the chart at it below. Development secrets are refused unless allowDevSecrets=true.
+
+image:
+  registry: ""                  # e.g. ghcr.io/babujir
+  tag: ""                       # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Set to true only for throwaway clusters: renders with the development secrets from docker-compose.
+allowDevSecrets: false
+
+# URLs as browsers and API clients see them
+urls:
+  api: https://api.portica.example.com          # management API
+  gateway: https://gw.portica.example.com        # API gateway
+  console: https://console.portica.example.com   # console and developer portal UI
+  portal: https://portal-api.portica.example.com # developer portal backend
+  oidcIssuer: https://sso.portica.example.com/realms/portica
+
+# Where the services find the infrastructure (cluster-internal)
+infra:
+  postgres:
+    url: jdbc:postgresql://postgres:5432/portica
+    username: portica
+  redis:
+    host: redis
+    port: 6379
+  kafka:
+    bootstrap: kafka:9092
+  clickhouse:
+    url: http://clickhouse:8123
+    database: portica
+    user: portica
+  oidc:
+    jwks: http://keycloak:8080/realms/portica/protocol/openid-connect/certs
+    tokenUri: http://keycloak:8080/realms/portica/protocol/openid-connect/token
+
+# Secret values; or set existingSecret to a Secret with the same keys (recommended, e.g. from External Secrets).
+secrets:
+  existingSecret: ""
+  dbPassword: ""
+  clickhousePassword: ""
+  internalToken: ""               # gateway -> AI gateway / MCP
+  gatewayClientSecret: ""         # Keycloak client portica-gateway
+  portalClientSecret: ""          # Keycloak client portica-portal
+  kvmEncryptionKey: ""            # local KEK "default" (base64, 32 bytes), if secretsProvider.type=local
+  vaultToken: ""                  # if secretsProvider.type=vault and no token file
+
+# Key-encryption keys for stored secrets (envelope encryption)
+secretsProvider:
+  type: local                     # local | vault
+  vault:
+    address: https://vault.example.com
+    namespace: ""
+    tokenFile: ""                 # e.g. /vault/secrets/token written by the Vault agent injector
+
+management:
+  enabled: true
+  replicas: 2
+  port: 8080
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  env: {}
+
+gateway:
+  enabled: true
+  replicas: 3
+  port: 8081
+  environments: "*"
+  resources:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 65
+  # TLS on the gateway itself (in addition to or instead of the ingress); needed for client certificates.
+  # The http port stays open as a plain listener for in-cluster callers (MCP, portal try-it, probes).
+  tls:
+    enabled: false
+    port: 8443
+    secretName: portica-gateway-tls   # kubernetes.io/tls secret (cert-manager); may also hold client-ca.crt
+    clientCaSecretName: ""            # secret with key client-ca.crt (CAs of client certificates); default: ca.crt of secretName
+    clientAuth: want                  # none | want | need
+  service:
+    type: ClusterIP                   # LoadBalancer to pass client certificates straight to the gateway
+  env: {}
+
+aiGateway:
+  enabled: true
+  replicas: 2
+  port: 8082
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  env: {}
+
+mcp:
+  enabled: true
+  replicas: 2
+  port: 8083
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  env: {}
+
+analytics:
+  enabled: true
+  replicas: 1
+  port: 8084
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  env: {}
+
+portal:
+  enabled: true
+  replicas: 2
+  port: 8085
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits: { memory: 768Mi }
+  env: {}
+
+console:
+  enabled: true
+  replicas: 2
+  port: 80
+  # the nginx image writes its runtime config.js and cache at start
+  podSecurityContext: { seccompProfile: { type: RuntimeDefault } }
+  securityContext: { allowPrivilegeEscalation: false }
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { memory: 128Mi }
+  env: {}
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  # cert-manager.io/cluster-issuer: letsencrypt
+  tls: []
+  # - secretName: portica-tls
+  #   hosts: [api.portica.example.com, gw.portica.example.com, console.portica.example.com, portal-api.portica.example.com]
+
+networkPolicy:
+  enabled: true
+  # extra peers allowed to reach the internal services (AI gateway, MCP, analytics), e.g. Prometheus:
+  # - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+  extraFrom: []
+
+podDisruptionBudget:
+  enabled: true
+
+serviceMonitor:
+  enabled: false                  # Prometheus Operator
+  interval: 30s
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: { type: RuntimeDefault }
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }

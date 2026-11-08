@@ -1,0 +1,31 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $root := . }}
+{{- /* The AI gateway and MCP services trust X-Portica-Internal-Token: only the gateway may reach them. */}}
+{{- range $name, $key := dict "ai-gateway" "aiGateway" "mcp" "mcp" "analytics" "analytics" }}
+{{- if (index $root.Values $key).enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "portica.component" (dict "root" $root "name" $name) }}
+  labels:
+    {{- include "portica.labels" (dict "root" $root "name" $name) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "portica.selector" (dict "root" $root "name" $name) | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    {{- if ne $name "analytics" }}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "portica.selector" (dict "root" $root "name" "gateway") | nindent 14 }}
+    {{- end }}
+    {{- with $root.Values.networkPolicy.extraFrom }}
+    - from:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
