@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Avatar, Button, Dropdown, Flex, Layout, Menu, Select, Space, Switch, Tag, Tooltip, Typography, theme } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  ApiOutlined, AppstoreOutlined, AuditOutlined, LineChartOutlined, CloudServerOutlined, ClusterOutlined, DashboardOutlined, DatabaseOutlined,
+  ApiOutlined, AppstoreOutlined, AuditOutlined, LineChartOutlined, RobotOutlined, ToolOutlined, CloudServerOutlined, ClusterOutlined, DashboardOutlined, DatabaseOutlined,
   LogoutOutlined, MobileOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SafetyOutlined, ShareAltOutlined,
   SunOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons';
@@ -36,6 +36,13 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
       { key: 'products', label: 'API Products', icon: <AppstoreOutlined />, permission: 'PRODUCT_READ' },
       { key: 'developers', label: 'Developers', icon: <TeamOutlined />, permission: 'DEVELOPER_READ' },
       { key: 'apps', label: 'Apps', icon: <MobileOutlined />, permission: 'DEVELOPER_READ' },
+    ],
+  },
+  {
+    group: 'AI',
+    items: [
+      { key: 'ai', label: 'AI Gateway', icon: <RobotOutlined />, permission: 'AI_READ' },
+      { key: 'mcp', label: 'MCP Servers', icon: <ToolOutlined />, permission: 'MCP_READ' },
     ],
   },
   {

@@ -1,6 +1,11 @@
 package com.portica.management.runtime;
 
 import com.portica.common.policy.FlowStep;
+import com.portica.management.ai.AiDtos.AiModel;
+import com.portica.management.ai.AiDtos.AiProviderType;
+import com.portica.management.ai.AiDtos.AiRoute;
+import com.portica.management.ai.AiDtos.PiiPolicy;
+import com.portica.management.ai.AiDtos.TokenQuota;
 import com.portica.common.policy.PolicyDefinition;
 import com.portica.common.policy.ProxyFlows;
 
@@ -65,5 +70,50 @@ public final class RuntimeDtos {
 
     /** A key value map readable in this environment, with plain (decrypted) values. */
     public record RuntimeKeyValueMap(String name, String scope, boolean encrypted, Map<String, String> entries) {
+    }
+
+    // ------------------------------------------------------------------ AI gateway (Phase 7)
+
+    /** What the AI gateway needs for one environment: providers (with plain API keys) and AI proxies. */
+    public record RuntimeAiConfig(String organization, String environment, long configVersion, Instant generatedAt,
+                                  List<RuntimeAiProvider> providers, List<RuntimeAiProxy> proxies) {
+    }
+
+    public record RuntimeAiProvider(String name, AiProviderType type, String baseUrl, String apiKey, boolean enabled,
+                                    List<AiModel> models) {
+    }
+
+    public record RuntimeAiProxy(String name, List<AiRoute> routes, String defaultRoute, boolean allowProviderModels,
+                                 TokenQuota tokenQuota, PiiPolicy pii, int timeoutSeconds, Integer maxOutputTokens) {
+    }
+
+    // ------------------------------------------------------------------ MCP (Phase 7)
+
+    /** What portica-mcp needs for one environment. */
+    public record RuntimeMcpConfig(String organization, String environment, long configVersion, Instant generatedAt,
+                                   List<RuntimeMcpServer> servers) {
+    }
+
+    /**
+     * @param proxyBasePath OPENAPI: base path of the API proxy deployed in this environment; tool calls go
+     *                      to the gateway at {@code /{org}/{env}{proxyBasePath}{tool path}}
+     * @param remoteUrl     REMOTE: the server's MCP endpoint
+     * @param remoteToken   REMOTE: true when calls need a bearer token (ask the token endpoint)
+     */
+    public record RuntimeMcpServer(String name, String displayName, String description, String type,
+                                   String proxyBasePath, List<RuntimeMcpTool> tools, String remoteUrl,
+                                   boolean remoteToken, List<String> allowedTools, int timeoutSeconds) {
+    }
+
+    public record RuntimeMcpTool(String name, String title, String description, Map<String, Object> inputSchema,
+                                 Map<String, Object> annotations, String method, String path,
+                                 List<RuntimeHttpParameter> parameters, boolean hasBody, String bodyContentType) {
+    }
+
+    public record RuntimeHttpParameter(String name, String in) {
+    }
+
+    /** A remote MCP server's current access token ({@code accessToken} null when it needs none). */
+    public record RuntimeMcpToken(String accessToken, Instant expiresAt) {
     }
 }

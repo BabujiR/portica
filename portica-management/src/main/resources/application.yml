@@ -84,6 +84,15 @@ portica:
       - http://localhost:5173
   organizations:
     default-environments: [dev, test, prod]
+  services:
+    # Phase 7: where things are, for OAuth redirects and the generated AI / MCP gateway proxies
+    public-url: ${PORTICA_PUBLIC_URL:http://localhost:8080}             # this API, as browsers reach it
+    console-url: ${PORTICA_CONSOLE_URL:http://localhost:5173}
+    gateway-url: ${PORTICA_GATEWAY_PUBLIC_URL:http://localhost:8081}    # advertised in MCP OAuth metadata
+    ai-gateway-url: ${PORTICA_AI_GATEWAY_URL:http://localhost:8082}     # reached by the gateway
+    mcp-url: ${PORTICA_MCP_URL:http://localhost:8083}                   # reached by the gateway
+    # shared secret the gateway adds when forwarding to portica-ai-gateway and portica-mcp; same value there
+    internal-token: ${PORTICA_INTERNAL_TOKEN:portica-internal-dev-token}
   clickhouse:
     # analytics and trace data written by portica-analytics; read by the analytics and trace APIs
     url: ${PORTICA_CLICKHOUSE_URL:http://localhost:8123}

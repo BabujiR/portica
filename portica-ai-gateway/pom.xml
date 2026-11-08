@@ -12,7 +12,7 @@
 
     <artifactId>portica-ai-gateway</artifactId>
     <name>Portica :: AI Gateway</name>
-    <description>Unified, governed LLM endpoint across AI providers (implemented in Phase 7).</description>
+    <description>Unified, governed LLM endpoint across AI providers: OpenAI-compatible API, routing and fallback, token quotas, cost tracking and PII redaction.</description>
 
     <dependencies>
         <dependency>
@@ -23,6 +23,15 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <!-- Token quota counters shared by every AI gateway instance -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

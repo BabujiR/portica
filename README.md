@@ -3,13 +3,15 @@
 **The front door to your APIs.** A self-hosted, cloud-agnostic API management platform:
 High-level completeness without the cost or lock-in.
 
-> **Status: Phase 6 – Analytics & Trace.** Organizations, environments, members and RBAC (Phase 1); target
+> **Status: Phase 7 – AI Gateway & MCP.** Organizations, environments, members and RBAC (Phase 1); target
 > servers, API proxies with immutable revisions, OpenAPI import and live deployments (Phase 2); a policy
 > engine with flows, fault rules, shared flows and 17 built-in policies (Phase 3); API products,
 > developers, apps with key issuance, rotation and revocation, key value maps and OAuth 2.0 client
 > credentials (Phase 4); a React + Ant Design web console with a drag-and-drop policy flow editor
 > (Phase 5); and API analytics (gateway → Kafka → ClickHouse) with ECharts dashboards, an audit log
-> page and live trace sessions streamed to the console (Phase 6).
+> page and live trace sessions streamed to the console (Phase 6); and an OpenAI-compatible AI gateway over
+> OpenAI and Anthropic with routing and fallback, token quotas, cost tracking and PII redaction, plus MCP
+> servers generated from OpenAPI specs or fronting remote MCP servers with OAuth 2.1 (Phase 7).
 
 ---
 
@@ -59,8 +61,8 @@ flowchart LR
 | `portica-management` | 8080 | **Implemented** | Admin API for everything |
 | `portica-gateway` | 8081 | **Implemented**: dynamic routing | + policy engine (Phase 3) |
 | `portica-analytics` | 8084 | **Implemented** (Phase 6) | Kafka → ClickHouse ingestion of API events and traces |
-| `portica-ai-gateway` | 8082 | Skeleton | LLM gateway (Phase 7) |
-| `portica-mcp` | 8083 | Skeleton | MCP gateway (Phase 7) |
+| `portica-ai-gateway` | 8082 | **Implemented** (Phase 7) | OpenAI-compatible LLM gateway over OpenAI and Anthropic |
+| `portica-mcp` | 8083 | **Implemented** (Phase 7) | MCP servers from OpenAPI specs and remote MCP servers |
 | `portica-portal` | 8085 | Skeleton | Developer portal backend (Phase 8) |
 | `portica-console` | 5173 | Phase 5 | React + Ant Design web console ([README](portica-console/README.md)) |
 
@@ -202,9 +204,16 @@ mvn -pl portica-gateway spring-boot:run "-Dspring-boot.run.profiles=local"
 # 4. The analytics ingester (in a third terminal; optional, feeds the Analytics page and traces)
 mvn -pl portica-analytics spring-boot:run
 
-# 5. The console (in a fourth terminal): open http://localhost:5173 and sign in as admin / admin
+# 5. The AI gateway and MCP service (optional; each in its own terminal)
+mvn -pl portica-ai-gateway spring-boot:run
+mvn -pl portica-mcp spring-boot:run
+
+# 6. The console (in another terminal): open http://localhost:5173 and sign in as admin / admin
 cd portica-console && npm install && npm run dev
 ```
+
+> `mvn -pl <module> spring-boot:run` uses the other modules from your local Maven repository. After
+> pulling changes to `portica-common`, run `mvn install -DskipTests` once so they pick it up.
 
 The gateway publishes every call to Kafka (`localhost:9092`) and `portica-analytics` writes them to
 ClickHouse (`localhost:8123`); both start with `docker compose up -d`. Without them the gateway serves
@@ -245,7 +254,7 @@ stored encrypted values unreadable.
 To run the management API and gateway in Docker instead:
 
 ```bash
-mvn -pl portica-management,portica-gateway,portica-analytics -am package -DskipTests
+mvn -pl portica-management,portica-gateway,portica-analytics,portica-ai-gateway,portica-mcp -am package -DskipTests
 docker compose --profile app up -d --build
 ```
 
@@ -452,6 +461,38 @@ curl -s "$API/organizations/acme/audit-events?q=trace&resourceType=TraceSession"
 In the console: **Analytics** in the side menu, **Audit Log** under *Administer*, and the **Trace** tab of
 an API proxy (pick an environment, *Start trace*, call the proxy, click a call to see each policy step).
 
+### Phase 7: an AI proxy and an MCP server
+
+```bash
+# An LLM provider (any OpenAI-compatible server works: OpenAI, Azure OpenAI, vLLM, Ollama at
+# http://localhost:11434/v1 ...) and an AI proxy with a route, a token quota and PII redaction
+curl -s -X POST $API/organizations/acme/ai/providers -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' \
+  -d '{"name":"openai","type":"OPENAI","apiKey":"'$OPENAI_API_KEY'",
+       "models":[{"name":"gpt-4o-mini","inputCostPerMillion":0.15,"outputCostPerMillion":0.60}]}' | jq
+curl -s -X POST $API/organizations/acme/ai/proxies -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' \
+  -d '{"name":"assistant","routes":[{"name":"fast","targets":[{"provider":"openai","model":"gpt-4o-mini"}]}],
+       "tokenQuota":{"tokens":100000,"timeUnit":"day"},"pii":{"action":"REDACT"}}' | jq
+
+# Call it like OpenAI (the local profile's dev key opens every proxy of acme; apps need a product with ai-assistant)
+sleep 6; curl -s http://localhost:8081/acme/dev/ai/assistant/v1/chat/completions -H 'x-api-key: dev-acme-key-123' \
+  -H 'Content-Type: application/json' -d '{"model":"fast","messages":[{"role":"user","content":"Hi, I am bob@example.com"}]}' -i
+# -> X-Portica-AI-Provider, X-Portica-AI-Cost-USD, X-Portica-AI-Tokens-Remaining; the provider saw [EMAIL]
+
+# An MCP server whose tools are the operations of an API proxy's OpenAPI spec (proxy deployed in dev)
+curl -s -X POST $API/organizations/acme/mcp/servers -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' \
+  -d '{"name":"petstore","type":"OPENAPI","apiProxy":"petstore"}' | jq
+curl -s "$API/organizations/acme/mcp/servers/petstore/tools?environment=dev" -H "Authorization: Bearer $ALICE" | jq '.[].name'
+curl -s http://localhost:8081/acme/dev/mcp/petstore -H 'x-api-key: dev-acme-key-123' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq
+```
+
+Point any MCP client at `http://localhost:8081/acme/dev/mcp/petstore` with an `x-api-key` header; the
+console's MCP server page shows a ready-made client configuration. `SampleMcpClient` in
+`portica-mcp/src/test` is a minimal client to try it from Java.
+
+In the console: **AI Gateway** (providers, AI proxies with copy-paste curl and SDK snippets, usage and
+cost) and **MCP Servers** (OpenAPI or remote, tool list, upstream OAuth sign-in, tool call analytics).
+
 On Windows PowerShell, use the token snippet from the IntelliJ guide and `Invoke-RestMethod`, or run the
 commands above from Git Bash.
 
@@ -619,7 +660,13 @@ shared flow checks that the maps it reads exist.
 | GET | `/organizations/{org}/analytics/summary`, `/timeseries`, `/top?dimension=`, `/events` | `ANALYTICS_READ` |
 | POST / GET | `/organizations/{org}/environments/{env}/apis/{api}/trace-sessions` | `TRACE_RUN` |
 | GET / DELETE | `/organizations/{org}/trace-sessions/{id}`, GET `.../transactions`, GET `.../stream` (SSE) | `TRACE_RUN` |
-| GET | `/internal/v1/runtime/environments`, `/internal/v1/runtime/organizations/{org}/environments/{env}`, `/internal/v1/runtime/trace-sessions` | `portica-runtime` realm role (gateways) |
+| GET / POST / PUT / DELETE | `/organizations/{org}/ai/providers[/{name}]`, `/organizations/{org}/ai/proxies[/{name}]` | `AI_READ` / `AI_WRITE` |
+| GET / POST / PUT / DELETE | `/organizations/{org}/mcp/servers[/{name}]`, GET `.../{name}/tools?environment=` | `MCP_READ` / `MCP_WRITE` |
+| POST / DELETE | `.../mcp/servers/{name}/oauth/authorize`, `.../oauth/connect`, `.../oauth/token` (upstream OAuth 2.1) | `MCP_WRITE` |
+| GET | `/organizations/{org}/analytics/ai/summary`, `/ai/timeseries`, `/ai/top`, `/mcp/summary`, `/mcp/top`, `/mcp/calls` | `ANALYTICS_READ` |
+| GET | `/mcp/oauth/callback` (browser redirect from an authorization server) | public, single-use state |
+| GET | `/internal/v1/runtime/environments`, `/internal/v1/runtime/organizations/{org}/environments/{env}[/ai\|/mcp]`, `/internal/v1/runtime/trace-sessions` | `portica-runtime` realm role (gateways) |
+| POST | `/internal/v1/runtime/organizations/{org}/mcp-servers/{name}/token` (current upstream access token) | `portica-runtime` realm role |
 
 List endpoints take `page`, `size` (max 100), `sort` (allow-listed fields) and `q` (case-insensitive search)
 and return `{items, page, size, totalElements, totalPages}`. Errors are `application/problem+json` with a stable
@@ -821,7 +868,49 @@ send the bearer token) and reconnects on its own; management polls ClickHouse on
 stream. SSE is plain HTTP, so it passes proxies and load balancers that block WebSockets. Starting and
 stopping traces is recorded in the audit log.
 
-## Next: Phase 7
+### Phase 7
 
-AI gateway and MCP gateway: LLM routing, token quotas and prompt policies; and MCP tool access with the
-same products, apps and analytics.
+**AI and MCP traffic goes through the policy engine.** Every AI proxy and MCP server becomes a generated
+gateway proxy (`ai-<name>`, `mcp-<name>`) in the environment's snapshot: the gateway verifies the app's API
+key or OAuth token, checks its API product grants, records analytics and traces, then forwards to
+portica-ai-gateway or portica-mcp with the calling app and a shared internal token (those services refuse
+calls without it). So AI and MCP access is granted, revoked, quota'd and observed exactly like any API.
+
+**One OpenAI-compatible API over several providers.** Clients send OpenAI chat completions requests and
+pick a *route* as `model`; a route lists provider models in fallback order (429s, 5xx and timeouts move on
+to the next). Anthropic's Messages API is translated both ways, streaming included; tool calling is passed
+through for OpenAI-compatible providers but not translated for Anthropic yet. Provider keys are encrypted
+in the management plane and only the AI gateway sees them.
+
+**Token quotas count real usage.** A call is refused (429) once the app's tokens in the current window
+reach the quota; after each call its actual prompt + completion tokens are added (Redis, shared by
+instances). The call that crosses the limit is allowed to finish, so an app can overshoot by one call.
+Costs use the list prices on the provider's models and land in ClickHouse with every call.
+
+**PII redaction is pattern-based.** Emails, phone numbers, card numbers (Luhn-checked), US SSNs, IPv4
+addresses and IBANs (checksum-verified) in prompts are replaced with placeholders, or the call is blocked.
+It catches formatted identifiers, not names or free-text addresses; put a dedicated DLP service in front
+for that. Streaming responses are not scanned.
+
+**MCP tools from OpenAPI call the API through the gateway.** Each operation of the deployed revision's spec
+becomes a tool (path, query and header parameters plus `body`); a tool call is an HTTP request to the API
+proxy through the gateway with the MCP client's own credential, so that proxy's policies, quotas and
+analytics apply. Apps therefore need both `mcp-<name>` and the API proxy in their products.
+
+**Remote MCP servers with OAuth 2.1.** Portica discovers the authorization server (RFC 9728 protected
+resource metadata, RFC 8414), gets tokens with client credentials or an admin's one-time sign-in
+(authorization code with PKCE S256), sends the resource indicator (RFC 8707), and refreshes them, all in the
+management plane where they're stored encrypted. portica-mcp asks for a current access token; MCP clients
+never see upstream tokens, and their own credentials are never forwarded upstream. For MCP clients, the
+gateway publishes protected resource and authorization server metadata, and OAuth-protected MCP servers
+answer 401 with `WWW-Authenticate: Bearer resource_metadata=...`. Portica's token endpoint offers client
+credentials only, so interactive MCP clients that need the authorization code flow use API keys for now.
+
+**Stateless Streamable HTTP.** portica-mcp answers each JSON-RPC request with JSON and keeps no session, so
+any instance can serve any call; it doesn't push server-initiated messages (GET answers 405, as the spec
+allows).
+
+## Next: Phase 8
+
+Developer portal and hardening: self-service portal for developers and apps, gateway TLS and client and
+backend mTLS, Vault/KMS-backed secrets and key rotation, distributed SpikeArrest, and load tests.

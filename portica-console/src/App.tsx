@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useState, type ReactElement } from 'react';
 import { Skeleton } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, Navigate, RouterProvider, type RouteObject } from 'react-router-dom';
@@ -23,6 +23,10 @@ import { TargetServers } from './pages/targetservers/TargetServers';
 
 // ECharts is large: load the analytics page (and its charts) only when it's opened
 const Analytics = lazy(() => import('./pages/analytics/Analytics').then((m) => ({ default: m.Analytics })));
+const AiGateway = lazy(() => import('./pages/ai/AiGateway').then((m) => ({ default: m.AiGateway })));
+const McpServers = lazy(() => import('./pages/mcp/McpServers').then((m) => ({ default: m.McpServers })));
+const McpServerDetail = lazy(() => import('./pages/mcp/McpServerDetail').then((m) => ({ default: m.McpServerDetail })));
+const lazyPage = (page: ReactElement) => <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>{page}</Suspense>;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +50,9 @@ const routes: RouteObject[] = [
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'analytics', element: <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}><Analytics /></Suspense> },
       { path: 'audit', element: <AuditLog /> },
+      { path: 'ai', element: lazyPage(<AiGateway />) },
+      { path: 'mcp', element: lazyPage(<McpServers />) },
+      { path: 'mcp/:name', element: lazyPage(<McpServerDetail />) },
       { path: 'proxies', element: <ProxyList /> },
       { path: 'proxies/new', element: <ProxyCreate /> },
       { path: 'proxies/:api', element: <ProxyDetail /> },
