@@ -49,7 +49,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * product quotas and key value maps, plus revocation through a new snapshot.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"portica.gateway.sync.enabled=false", "portica.gateway.policy.store=memory"})
+        properties = {"portica.gateway.sync.enabled=false", "portica.gateway.policy.store=memory",
+        "portica.gateway.analytics.enabled=false"})
 class DeveloperAppsIntegrationTest {
 
     private static final AtomicLong VERSION = new AtomicLong();

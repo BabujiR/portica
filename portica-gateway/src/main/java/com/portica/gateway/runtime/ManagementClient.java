@@ -1,5 +1,7 @@
 package com.portica.gateway.runtime;
 
+import com.portica.gateway.trace.TraceSession;
+import java.util.List;
 import com.portica.gateway.config.PorticaGatewayProperties;
 import com.portica.gateway.runtime.RuntimeModel.RuntimeEnvironmentConfig;
 import com.portica.gateway.runtime.RuntimeModel.RuntimeIndex;
@@ -49,6 +51,17 @@ public class ManagementClient {
                     }
                     return response.createError();
                 })
+                .timeout(timeout));
+    }
+
+    /** Active trace (debug) sessions for every environment. */
+    public Mono<List<TraceSession>> traceSessions() {
+        return bearer().flatMap(auth -> webClient.get()
+                .uri("/internal/v1/runtime/trace-sessions")
+                .headers(h -> auth.ifPresent(token -> h.set(HttpHeaders.AUTHORIZATION, "Bearer " + token)))
+                .retrieve()
+                .bodyToFlux(TraceSession.class)
+                .collectList()
                 .timeout(timeout));
     }
 

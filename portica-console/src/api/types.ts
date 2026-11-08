@@ -320,3 +320,152 @@ export interface KeyValueEntry {
   updatedAt: string;
   updatedBy?: string;
 }
+
+// ------------------------------------------------------------------ analytics (Phase 6)
+
+export interface AnalyticsWindow {
+  from: string;
+  to: string;
+  environment?: string | null;
+  apiProxy?: string | null;
+}
+
+export interface AnalyticsSummary {
+  window: AnalyticsWindow;
+  requests: number;
+  errors4xx: number;
+  errors5xx: number;
+  errorRate: number;
+  avgMs: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  avgTargetMs: number;
+  cacheHits: number;
+}
+
+export interface TimeseriesPoint {
+  time: string;
+  requests: number;
+  errors: number;
+  avgMs: number;
+  p95Ms: number;
+}
+
+export interface AnalyticsTimeseries {
+  window: AnalyticsWindow;
+  bucketSeconds: number;
+  points: TimeseriesPoint[];
+}
+
+export type AnalyticsDimension = 'api_proxy' | 'environment' | 'app' | 'api_product' | 'developer' | 'status' | 'fault' | 'gateway';
+
+export interface TopEntry {
+  name: string;
+  requests: number;
+  errors: number;
+  avgMs: number;
+}
+
+export interface AnalyticsTop {
+  window: AnalyticsWindow;
+  dimension: AnalyticsDimension;
+  entries: TopEntry[];
+}
+
+export interface ApiEvent {
+  time: string;
+  requestId: string;
+  environment: string;
+  apiProxy: string;
+  revision: number;
+  method: string;
+  path: string;
+  status: number;
+  totalMs: number;
+  targetMs: number;
+  app: string;
+  developer: string;
+  apiProduct: string;
+  fault: string;
+  clientIp: string;
+  gateway: string;
+}
+
+export interface AnalyticsEvents {
+  window: AnalyticsWindow;
+  events: ApiEvent[];
+}
+
+// ------------------------------------------------------------------ trace (Phase 6)
+
+export type TraceState = 'ACTIVE' | 'EXPIRED' | 'STOPPED';
+
+export interface TraceSession {
+  id: string;
+  environment: string;
+  apiProxy: string;
+  filterHeader?: string | null;
+  filterValue?: string | null;
+  filterClientIp?: string | null;
+  maxTransactions: number;
+  state: TraceState;
+  createdBy?: string | null;
+  createdAt: string;
+  expiresAt: string;
+  stoppedAt?: string | null;
+}
+
+export interface StartTraceRequest {
+  filterHeader?: string;
+  filterValue?: string;
+  filterClientIp?: string;
+  durationSeconds?: number;
+  maxTransactions?: number;
+}
+
+export type TraceOutcome = 'executed' | 'skipped' | 'fault' | 'continued';
+
+export interface TraceStep {
+  flow: string;
+  policy: string;
+  type: string;
+  condition?: string;
+  outcome: TraceOutcome;
+  durationMs: number;
+  atMs: number;
+  fault?: string;
+}
+
+export interface TracePayload {
+  requestId?: string;
+  startedAt?: string;
+  totalMs?: number;
+  request?: { method: string; uri: string; headers: Record<string, string>; clientIp?: string };
+  steps?: TraceStep[];
+  target?: { url: string; status: number; durationMs: number } | null;
+  response?: { status: number; headers: Record<string, string> };
+  fault?: { name: string; status: number; message: string } | null;
+  variables?: Record<string, unknown>;
+}
+
+export interface TraceTransaction {
+  requestId: string;
+  time: string;
+  status: number;
+  totalMs: number;
+  payload: TracePayload;
+}
+
+// ------------------------------------------------------------------ audit
+
+export interface AuditEvent {
+  id: string;
+  action: string;
+  resourceType: string;
+  resourceName: string;
+  actor?: string | null;
+  details: Record<string, unknown>;
+  requestId?: string | null;
+  occurredAt: string;
+}

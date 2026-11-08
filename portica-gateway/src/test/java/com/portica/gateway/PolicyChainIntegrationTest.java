@@ -44,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "portica.gateway.sync.enabled=false",
         "portica.gateway.policy.store=memory",
+        "portica.gateway.analytics.enabled=false",
         "portica.gateway.dev.api-keys[0].organization=acme",
         "portica.gateway.dev.api-keys[0].key=chain-test-key",
         "portica.gateway.dev.api-keys[0].app=chain-app",

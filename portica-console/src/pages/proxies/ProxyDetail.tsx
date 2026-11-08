@@ -20,6 +20,7 @@ import { useNotify } from '../../components/useNotify';
 import { useUnsavedChanges } from '../../components/useUnsavedChanges';
 import { FlowEditor } from '../flow/FlowEditor';
 import { cleanFlows, normalizeFlows, type Bundle } from '../flow/model';
+import { TracePanel } from '../trace/TracePanel';
 import { DeployControl } from './DeployControl';
 
 export function ProxyDetail() {
@@ -49,6 +50,9 @@ export function ProxyDetail() {
               { key: 'develop', label: 'Develop', children: <Develop api={api} latest={proxy.data.latestRevision} /> },
               { key: 'revisions', label: 'Revisions', children: <Revisions api={api} deployments={deployments.data ?? []} /> },
               { key: 'deployments', label: 'Deployments', children: <Deployments api={api} deployments={deployments.data ?? []} loading={deployments.isLoading} /> },
+              ...(can('TRACE_RUN')
+                ? [{ key: 'trace', label: 'Trace', children: <TracePanel api={api} deployments={deployments.data ?? []} /> }]
+                : []),
             ]}
           />
         )}

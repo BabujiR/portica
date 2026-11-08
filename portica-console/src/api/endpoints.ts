@@ -1,5 +1,7 @@
 import { api, path } from './client';
 import type {
+  AnalyticsDimension, AnalyticsEvents, AnalyticsSummary, AnalyticsTimeseries, AnalyticsTop, AuditEvent,
+  StartTraceRequest, TraceSession, TraceTransaction,
   ApiProduct, ApiProductRequest, ApiProxy, Credential, Deployment, Developer, DeveloperApp, Environment,
   FlowStep, ImportResult, Operation, IssuedCredential, KeyValueEntry, KeyValueMap, Me, Member, Organization, Page,
   PolicyDefinition, PolicyType, Revision, RevisionRequest, Role, SharedFlow, SharedFlowDeployment,
@@ -197,3 +199,52 @@ export const putKvmEntry = (org: string, env: string | null, name: string, key: 
     { method: 'PUT', body: { value } });
 export const deleteKvmEntry = (org: string, env: string | null, name: string, key: string) =>
   api<void>(`${kvmBase(org, env)}/${encodeURIComponent(name)}/entries/${encodeURIComponent(key)}`, { method: 'DELETE' });
+
+// ------------------------------------------------------------------ analytics
+
+export interface AnalyticsFilter {
+  from?: string;
+  to?: string;
+  environment?: string;
+  apiProxy?: string;
+}
+
+const analyticsPath = (org: string, what: string) => path('/organizations/{0}/analytics/', org) + what;
+
+export const getAnalyticsSummary = (org: string, f: AnalyticsFilter) =>
+  api<AnalyticsSummary>(analyticsPath(org, 'summary'), { query: { ...f } });
+export const getAnalyticsTimeseries = (org: string, f: AnalyticsFilter) =>
+  api<AnalyticsTimeseries>(analyticsPath(org, 'timeseries'), { query: { ...f } });
+export const getAnalyticsTop = (org: string, dimension: AnalyticsDimension, f: AnalyticsFilter, limit = 10) =>
+  api<AnalyticsTop>(analyticsPath(org, 'top'), { query: { ...f, dimension, limit } });
+export const getAnalyticsEvents = (org: string, f: AnalyticsFilter, status?: string, limit = 100) =>
+  api<AnalyticsEvents>(analyticsPath(org, 'events'), { query: { ...f, status, limit } });
+
+// ------------------------------------------------------------------ trace
+
+export const listTraceSessions = (org: string, env: string, apiProxy: string) =>
+  api<TraceSession[]>(path('/organizations/{0}/environments/{1}/apis/{2}/trace-sessions', org, env, apiProxy));
+export const startTraceSession = (org: string, env: string, apiProxy: string, body: StartTraceRequest) =>
+  api<TraceSession>(path('/organizations/{0}/environments/{1}/apis/{2}/trace-sessions', org, env, apiProxy),
+    { method: 'POST', body });
+export const stopTraceSession = (org: string, id: string) =>
+  api<TraceSession>(path('/organizations/{0}/trace-sessions/{1}', org, id), { method: 'DELETE' });
+export const listTraceTransactions = (org: string, id: string) =>
+  api<TraceTransaction[]>(path('/organizations/{0}/trace-sessions/{1}/transactions', org, id));
+export const traceStreamPath = (org: string, id: string) => path('/organizations/{0}/trace-sessions/{1}/stream', org, id);
+
+// ------------------------------------------------------------------ audit
+
+export interface AuditFilter {
+  q?: string;
+  resourceType?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  size?: number;
+}
+
+export const listAuditEvents = (org: string, f: AuditFilter) =>
+  api<Page<AuditEvent>>(path('/organizations/{0}/audit-events', org), { query: { ...f } });
+export const listAuditResourceTypes = (org: string) =>
+  api<string[]>(path('/organizations/{0}/audit-events/resource-types', org));

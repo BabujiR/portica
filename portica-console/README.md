@@ -47,12 +47,14 @@ URIs and web origins, and to the management API's `portica.security.cors-allowed
 | Area | Pages |
 |---|---|
 | Shell | Sign-in (OIDC, PKCE, tokens in session storage, silent renewal), organization and environment switchers, light/dark mode, permission-aware navigation |
-| API proxies | List with live revision per environment; create wizard (backend URL or OpenAPI import, target URL or target server, starter security policies, deploy); detail with overview, **flow editor**, revisions and deployments |
+| API proxies | List with live revision per environment; create wizard (backend URL or OpenAPI import, target URL or target server, starter security policies, deploy); detail with overview, **flow editor**, revisions, deployments and a live **trace** |
 | Flow editor | Drag policies from the palette onto PreFlow, conditional flows, PostFlow and fault rules; drag steps to reorder or move; step conditions; JSON policy configuration with examples; saves a new immutable revision and can deploy it |
 | Shared flows | List, editor (same drag-and-drop editor), deployments |
 | Publish | API products (proxies, paths, environments, scopes, quota, approval); developers; apps with keys: issue, rotate with grace period, revoke, expiry, approve/revoke/remove products |
 | Configure | Environments (with what's deployed), target servers, key value maps (environment and organization scope, encrypted values never shown) |
-| Administer | Members (invite, roles, remove) and the built-in roles with their permissions |
+| Analytics | Requests, error rate and latency tiles; traffic and latency over time, top proxies, top apps and status codes (ECharts); recent calls; time range, environment and proxy filters; live refresh |
+| Trace | Start a session per environment (optional header or client IP filter), watch calls arrive over Server-Sent Events, inspect each call: policy steps (ran, skipped, fault), target call, headers and flow variables (secrets masked) |
+| Administer | Members (invite, roles, remove) and the built-in roles with their permissions; audit log with search, resource type and date filters |
 
 Layout of `src/`: `auth/` (OIDC), `api/` (typed client for every endpoint, problem-detail errors),
 `app/` (theme, workspace context, shell), `components/` (shared UI bits), `pages/` (one folder per area;
@@ -66,5 +68,9 @@ Layout of `src/`: `auth/` (OIDC), `api/` (typed client for every endpoint, probl
 - **Secrets** (consumer secrets) are shown once in a modal right after they're issued; the API can't
   return them again.
 - **Unsaved flow edits** are protected: leaving the page or switching revisions asks first.
+- **Charts** use ECharts with only the line and bar charts registered, and the Analytics page is
+  lazy-loaded, so the rest of the console doesn't download the charting library.
+- **Live trace** reads the SSE stream with `fetch` (EventSource can't send the bearer token) and
+  reconnects with backoff if the connection drops.
 - **Drag and drop** uses the browser's native API, and every drag action also has a button (add step,
   remove, move flows up/down), so the editor works with a keyboard.

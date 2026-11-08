@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
+import { Skeleton } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, Navigate, RouterProvider, type RouteObject } from 'react-router-dom';
 import { ApiError } from './api/client';
@@ -7,6 +8,7 @@ import { CALLBACK_PATH } from './auth/oidc';
 import { Home, NotFound, OrgShell } from './app/Shell';
 import { ThemeProvider } from './app/ThemeProvider';
 import { AppDetail, AppList } from './pages/apps/Apps';
+import { AuditLog } from './pages/audit/AuditLog';
 import { Dashboard } from './pages/dashboard/Dashboard';
 import { DeveloperDetail, DeveloperList } from './pages/developers/Developers';
 import { Environments } from './pages/environments/Environments';
@@ -18,6 +20,9 @@ import { ProxyDetail } from './pages/proxies/ProxyDetail';
 import { ProxyList } from './pages/proxies/ProxyList';
 import { SharedFlowDetail, SharedFlowList } from './pages/sharedflows/SharedFlows';
 import { TargetServers } from './pages/targetservers/TargetServers';
+
+// ECharts is large: load the analytics page (and its charts) only when it's opened
+const Analytics = lazy(() => import('./pages/analytics/Analytics').then((m) => ({ default: m.Analytics })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +44,8 @@ const routes: RouteObject[] = [
     children: [
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: 'dashboard', element: <Dashboard /> },
+      { path: 'analytics', element: <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}><Analytics /></Suspense> },
+      { path: 'audit', element: <AuditLog /> },
       { path: 'proxies', element: <ProxyList /> },
       { path: 'proxies/new', element: <ProxyCreate /> },
       { path: 'proxies/:api', element: <ProxyDetail /> },
