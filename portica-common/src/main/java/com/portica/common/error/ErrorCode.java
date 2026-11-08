@@ -18,7 +18,8 @@ public enum ErrorCode {
     RESOURCE_CONFLICT(409, "Resource conflict"),
     CONCURRENT_MODIFICATION(409, "Concurrent modification"),
     BUSINESS_RULE_VIOLATION(422, "Business rule violation"),
-    INTERNAL_ERROR(500, "Internal server error");
+    INTERNAL_ERROR(500, "Internal server error"),
+    SERVICE_UNAVAILABLE(503, "Service unavailable");
 
     private static final String TYPE_BASE = "https://docs.portica.dev/problems/";
 

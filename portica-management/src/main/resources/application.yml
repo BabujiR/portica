@@ -84,6 +84,13 @@ portica:
       - http://localhost:5173
   organizations:
     default-environments: [dev, test, prod]
+  clickhouse:
+    # analytics and trace data written by portica-analytics; read by the analytics and trace APIs
+    url: ${PORTICA_CLICKHOUSE_URL:http://localhost:8123}
+    database: ${PORTICA_CLICKHOUSE_DATABASE:portica_analytics}
+    user: ${PORTICA_CLICKHOUSE_USER:portica}
+    password: ${PORTICA_CLICKHOUSE_PASSWORD:portica}
+    timeout: 15s
   kvm:
     # AES-256 key (base64 of 32 random bytes: openssl rand -base64 32) for encrypted key value maps.
     # Without it, encrypted maps can't be created. Keep it secret and stable: changing it makes

@@ -12,7 +12,7 @@
 
     <artifactId>portica-analytics</artifactId>
     <name>Portica :: Analytics</name>
-    <description>Consumes gateway analytics events from Kafka into ClickHouse and serves analytics queries (implemented in Phase 6).</description>
+    <description>Consumes gateway analytics events and trace transactions from Kafka into ClickHouse.</description>
 
     <dependencies>
         <dependency>
@@ -31,10 +31,24 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-kafka</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

@@ -184,7 +184,7 @@ public class ProxyBundleCompiler {
     // ------------------------------------------------------------------ helpers
 
     /** A policy instance plus how its definition wants faults handled. */
-    private record Bound(Policy policy, boolean continueOnError) {
+    private record Bound(Policy policy, boolean continueOnError, String type) {
     }
 
     private Map<String, Bound> instantiate(List<PolicyDefinition> definitions, PolicyCompileContext context) {
@@ -199,7 +199,7 @@ public class ProxyBundleCompiler {
             if (factory == null) {
                 throw new IllegalStateException("policy type " + type.typeName() + " is not available in this gateway");
             }
-            policies.put(def.name(), new Bound(factory.create(def.name(), config, context), def.continueOnErrorOrDefault()));
+            policies.put(def.name(), new Bound(factory.create(def.name(), config, context), def.continueOnErrorOrDefault(), def.type()));
         }
         return policies;
     }
@@ -215,7 +215,7 @@ public class ProxyBundleCompiler {
             Condition condition = condition(step.condition(), flags, placement);
             flags.requestBody |= bound.policy().requiresRequestBody();
             flags.bufferedResponse |= bound.policy().requiresBufferedResponse(placement);
-            result.add(new CompiledStep(bound.policy(), condition, bound.continueOnError()));
+            result.add(new CompiledStep(bound.policy(), condition, bound.continueOnError(), bound.type()));
         }
         return List.copyOf(result);
     }

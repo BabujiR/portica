@@ -108,6 +108,8 @@ services:
       PORTICA_OIDC_ISSUER: http://localhost:8180/realms/portica
       PORTICA_OIDC_JWKS: http://keycloak:8080/realms/portica/protocol/openid-connect/certs
       PORTICA_KVM_ENCRYPTION_KEY: ${PORTICA_KVM_ENCRYPTION_KEY:-o1r8cXTayN7WvWNLZ8JMcwDzlrd05HPoHb9/reetxkQ=}
+      PORTICA_CLICKHOUSE_URL: http://clickhouse:8123
+      PORTICA_CLICKHOUSE_PASSWORD: ${PORTICA_CLICKHOUSE_PASSWORD:-portica}
     ports:
       - "8080:8080"
 
@@ -119,14 +121,48 @@ services:
     depends_on:
       - management
       - redis
+      - kafka
     environment:
       PORTICA_MANAGEMENT_URL: http://management:8080
+      PORTICA_KAFKA_BOOTSTRAP: kafka:29092
       PORTICA_OIDC_TOKEN_URI: http://keycloak:8080/realms/portica/protocol/openid-connect/token
       PORTICA_GATEWAY_CLIENT_SECRET: ${PORTICA_GATEWAY_CLIENT_SECRET:-portica-gateway-dev-secret}
       PORTICA_REDIS_HOST: redis
       SPRING_PROFILES_ACTIVE: local   # loads the development API keys (application-local.yml)
     ports:
       - "8081:8081"
+
+  # Kafka -> ClickHouse ingestion of analytics events and trace transactions (Phase 6)
+  analytics:
+    profiles: ["app"]
+    build:
+      context: ./portica-analytics
+    image: portica/portica-analytics:local
+    depends_on:
+      - kafka
+      - clickhouse
+    environment:
+      PORTICA_KAFKA_BOOTSTRAP: kafka:29092
+      PORTICA_CLICKHOUSE_URL: http://clickhouse:8123
+      PORTICA_CLICKHOUSE_PASSWORD: ${PORTICA_CLICKHOUSE_PASSWORD:-portica}
+    ports:
+      - "8084:8084"
+
+  # Web console (Phase 5). For development, run it with `npm run dev` in portica-console instead;
+  # this container serves the production build: docker compose --profile console up -d --build console
+  console:
+    profiles: ["console"]
+    build:
+      context: ./portica-console
+    image: portica/portica-console:local
+    environment:
+      # URLs as the browser sees them (not container names).
+      PORTICA_API_BASE_URL: http://localhost:8080
+      PORTICA_GATEWAY_URL: http://localhost:8081
+      PORTICA_OIDC_AUTHORITY: http://localhost:8180/realms/portica
+      PORTICA_OIDC_CLIENT_ID: portica-console
+    ports:
+      - "5173:80"
 
   # Demo backend for trying the gateway: echoes requests (path, headers, query) as JSON.
   # From the host it is http://localhost:8090; from containers it is http://demo-backend:8080.

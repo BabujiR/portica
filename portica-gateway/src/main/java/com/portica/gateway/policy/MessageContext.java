@@ -1,5 +1,7 @@
 package com.portica.gateway.policy;
 
+import com.portica.gateway.trace.TraceRecorder;
+import java.util.Collections;
 import com.portica.common.policy.condition.VariableResolver;
 import com.portica.common.policy.template.MessageTemplate;
 import org.springframework.http.HttpHeaders;
@@ -45,6 +47,7 @@ public final class MessageContext {
     private PolicyPhase phase = PolicyPhase.REQUEST;
     private boolean shortCircuited;
     private PolicyFault fault;
+    private TraceRecorder trace;
 
     public MessageContext(String requestId, ProxyInfo proxy, ProxyRequest request, String clientIp) {
         this.requestId = requestId;
@@ -90,6 +93,20 @@ public final class MessageContext {
             case "error.status.code" -> fault == null ? null : fault.status();
             default -> variables.get(name);
         };
+    }
+
+    /** Read-only view of the variables set by policies (not the built-in ones). */
+    public Map<String, Object> variables() {
+        return Collections.unmodifiableMap(variables);
+    }
+
+    /** The trace recorder when this request is being traced (a debug session matched it), else null. */
+    public TraceRecorder trace() {
+        return trace;
+    }
+
+    public void trace(TraceRecorder recorder) {
+        this.trace = recorder;
     }
 
     public VariableResolver resolver() {

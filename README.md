@@ -3,11 +3,13 @@
 **The front door to your APIs.** A self-hosted, cloud-agnostic API management platform:
 High-level completeness without the cost or lock-in.
 
-> **Status: Phase 4 – Products, developers and apps.** Organizations, environments, members and RBAC
-> (Phase 1); target servers, API proxies with immutable revisions, OpenAPI import and live deployments
-> (Phase 2); a policy engine with flows, fault rules, shared flows and 17 built-in policies (Phase 3);
-> and API products, developers, developer apps with key issuance, rotation and revocation, key value
-> maps, and an OAuth 2.0 client-credentials token endpoint enforced at the gateway (Phase 4).
+> **Status: Phase 6 – Analytics & Trace.** Organizations, environments, members and RBAC (Phase 1); target
+> servers, API proxies with immutable revisions, OpenAPI import and live deployments (Phase 2); a policy
+> engine with flows, fault rules, shared flows and 17 built-in policies (Phase 3); API products,
+> developers, apps with key issuance, rotation and revocation, key value maps and OAuth 2.0 client
+> credentials (Phase 4); a React + Ant Design web console with a drag-and-drop policy flow editor
+> (Phase 5); and API analytics (gateway → Kafka → ClickHouse) with ECharts dashboards, an audit log
+> page and live trace sessions streamed to the console (Phase 6).
 
 ---
 
@@ -16,7 +18,7 @@ High-level completeness without the cost or lock-in.
 ```mermaid
 flowchart LR
     subgraph Clients
-        Console["portica-console<br/>(React, Phase 5)"]
+        Console["portica-console<br/>(React + Ant Design)"]
         Portal["Developer Portal UI<br/>(Phase 8)"]
         Apps["API consumers<br/>& AI agents"]
     end
@@ -56,11 +58,11 @@ flowchart LR
 | `portica-common` | – | Error model, headers, validation, paging | Shared library |
 | `portica-management` | 8080 | **Implemented** | Admin API for everything |
 | `portica-gateway` | 8081 | **Implemented**: dynamic routing | + policy engine (Phase 3) |
-| `portica-analytics` | 8084 | Skeleton | Kafka → ClickHouse pipeline + query API (Phase 6) |
+| `portica-analytics` | 8084 | **Implemented** (Phase 6) | Kafka → ClickHouse ingestion of API events and traces |
 | `portica-ai-gateway` | 8082 | Skeleton | LLM gateway (Phase 7) |
 | `portica-mcp` | 8083 | Skeleton | MCP gateway (Phase 7) |
 | `portica-portal` | 8085 | Skeleton | Developer portal backend (Phase 8) |
-| `portica-console` | 5173 | Placeholder | React console (Phase 5) |
+| `portica-console` | 5173 | Phase 5 | React + Ant Design web console ([README](portica-console/README.md)) |
 
 ### Phase 1 data model
 
@@ -196,7 +198,18 @@ mvn clean verify
 # 3. Run the management API, then (in a second terminal) the gateway
 mvn -pl portica-management spring-boot:run
 mvn -pl portica-gateway spring-boot:run "-Dspring-boot.run.profiles=local"
+
+# 4. The analytics ingester (in a third terminal; optional, feeds the Analytics page and traces)
+mvn -pl portica-analytics spring-boot:run
+
+# 5. The console (in a fourth terminal): open http://localhost:5173 and sign in as admin / admin
+cd portica-console && npm install && npm run dev
 ```
+
+The gateway publishes every call to Kafka (`localhost:9092`) and `portica-analytics` writes them to
+ClickHouse (`localhost:8123`); both start with `docker compose up -d`. Without them the gateway serves
+traffic as usual: it drops events it can't send (and says so in its log once a minute), and the Analytics
+page answers *Analytics data is unavailable*.
 
 The gateway needs Redis (Quota counters, response cache, OAuth tokens), which `docker compose up -d`
 starts. The `local` profile adds a development API key (`dev-acme-key-123` for org `acme`) that opens
@@ -232,7 +245,7 @@ stored encrypted values unreadable.
 To run the management API and gateway in Docker instead:
 
 ```bash
-mvn -pl portica-management,portica-gateway -am package -DskipTests
+mvn -pl portica-management,portica-gateway,portica-analytics -am package -DskipTests
 docker compose --profile app up -d --build
 ```
 
@@ -413,6 +426,32 @@ curl -s -X PUT $API/organizations/acme/environments/dev/keyvaluemaps/backend/ent
 #   "get":[{"key":"api-token","assignTo":"private.backend.token"}]}} then use {private.backend.token}
 ```
 
+### Phase 6: analytics and a live trace
+
+```bash
+# Generate some traffic (with the gateway and portica-analytics running; some calls hit the quota: 429)
+for i in $(seq 1 50); do curl -s -o /dev/null http://localhost:8081/acme/dev/echo/pets -H 'x-api-key: dev-acme-key-123'; done
+
+# Numbers for the last hour (from, to, environment and apiProxy are optional filters)
+curl -s "$API/organizations/acme/analytics/summary" -H "Authorization: Bearer $ALICE" | jq
+curl -s "$API/organizations/acme/analytics/top?dimension=app" -H "Authorization: Bearer $ALICE" | jq
+curl -s "$API/organizations/acme/analytics/events?status=errors&limit=10" -H "Authorization: Bearer $ALICE" | jq
+
+# Trace calls that carry X-Debug: on, for 5 minutes
+SESSION=$(curl -s -X POST $API/organizations/acme/environments/dev/apis/echo/trace-sessions \
+  -H "Authorization: Bearer $ALICE" -H 'Content-Type: application/json' \
+  -d '{"filterHeader":"X-Debug","filterValue":"on","durationSeconds":300}' | jq -r .id)
+sleep 3; curl -s http://localhost:8081/acme/dev/echo/pets -H 'x-api-key: dev-acme-key-123' -H 'X-Debug: on' > /dev/null
+curl -N $API/organizations/acme/trace-sessions/$SESSION/stream -H "Authorization: Bearer $ALICE"   # live (SSE)
+curl -s -X DELETE $API/organizations/acme/trace-sessions/$SESSION -H "Authorization: Bearer $ALICE" | jq
+
+# Audit log search
+curl -s "$API/organizations/acme/audit-events?q=trace&resourceType=TraceSession" -H "Authorization: Bearer $ALICE" | jq
+```
+
+In the console: **Analytics** in the side menu, **Audit Log** under *Administer*, and the **Trace** tab of
+an API proxy (pick an environment, *Start trace*, call the proxy, click a call to see each policy step).
+
 On Windows PowerShell, use the token snippet from the IntelliJ guide and `Invoke-RestMethod`, or run the
 commands above from Git Bash.
 
@@ -554,7 +593,7 @@ shared flow checks that the maps it reads exist.
 | POST / PATCH / DELETE | `/organizations/{org}/environments[/{env}]` | `ENV_CREATE` / `ENV_UPDATE` / `ENV_DELETE` |
 | GET | `/organizations/{org}/members[/{userId}]` | `MEMBER_READ` |
 | POST / PUT `/{userId}/roles` / DELETE | `/organizations/{org}/members` | `MEMBER_MANAGE` |
-| GET | `/organizations/{org}/audit-events` | `AUDIT_READ` |
+| GET | `/organizations/{org}/audit-events` (`q`, `resourceType`, `from`, `to`), `.../audit-events/resource-types` | `AUDIT_READ` |
 | GET | `/organizations/{org}/environments/{env}/target-servers[/{name}]` | `ENV_READ` |
 | POST / PUT / DELETE | `/organizations/{org}/environments/{env}/target-servers[/{name}]` | `TARGET_SERVER_WRITE` |
 | GET | `/organizations/{org}/apis[/{api}]` | `PROXY_READ` |
@@ -577,7 +616,10 @@ shared flow checks that the maps it reads exist.
 | POST / PATCH / DELETE | `.../apps/{app}/keys[/{keyId}]`, `.../keys/{keyId}/rotate`, `.../keys/{keyId}/apiproducts[/{product}]` | `DEVELOPER_WRITE` |
 | GET | `/organizations/{org}[/environments/{env}]/keyvaluemaps[/{map}[/entries[/{key}]]]` | `PROXY_READ` |
 | POST / PUT / DELETE | `/organizations/{org}[/environments/{env}]/keyvaluemaps[/{map}[/entries/{key}]]` | `PROXY_WRITE` |
-| GET | `/internal/v1/runtime/environments`, `/internal/v1/runtime/organizations/{org}/environments/{env}` | `portica-runtime` realm role (gateways) |
+| GET | `/organizations/{org}/analytics/summary`, `/timeseries`, `/top?dimension=`, `/events` | `ANALYTICS_READ` |
+| POST / GET | `/organizations/{org}/environments/{env}/apis/{api}/trace-sessions` | `TRACE_RUN` |
+| GET / DELETE | `/organizations/{org}/trace-sessions/{id}`, GET `.../transactions`, GET `.../stream` (SSE) | `TRACE_RUN` |
+| GET | `/internal/v1/runtime/environments`, `/internal/v1/runtime/organizations/{org}/environments/{env}`, `/internal/v1/runtime/trace-sessions` | `portica-runtime` realm role (gateways) |
 
 List endpoints take `page`, `size` (max 100), `sort` (allow-listed fields) and `q` (case-insensitive search)
 and return `{items, page, size, totalElements, totalPages}`. Errors are `application/problem+json` with a stable
@@ -742,10 +784,44 @@ has no per-client attempt limit yet, so rate-limit `/*/*/oauth2/*` at your load 
 **Key value map secrets.** Encrypted maps are encrypted at rest with one AES-256 key from configuration
 (each value is bound to its map and key, so values can't be swapped between rows). Gateways receive the
 decrypted values over the authenticated runtime feed and keep them in memory only. Values assigned to
-`private.*` variables will be masked in trace sessions (Phase 6). A KMS-backed key and key rotation are
+`private.*` variables are masked in trace sessions (Phase 6). A KMS-backed key and key rotation are
 planned for hardening.
 
-## Next: Phase 5
+### Phase 6
 
-The console: a React GUI for everything so far, including the flow designer for policies, API products,
-developers and apps with key management, and key value maps.
+**Analytics never slow down or fail a call.** The gateway records one event per call after the response
+completes and hands it to a bounded in-memory queue; a background thread sends it to Kafka. When Kafka is
+slow or down the queue fills and new events are dropped and counted, so traffic is unaffected. Kafka in
+between makes ingestion resilient: `portica-analytics` writes to ClickHouse in batches and commits Kafka
+offsets only after a successful insert, so a ClickHouse outage delays analytics instead of losing them.
+Delivery is at least once; a crash between insert and commit can count a batch twice.
+
+**One table of raw events in ClickHouse.** Every call is a row in `api_events` (kept 90 days), sorted by
+organization, environment, proxy and time, and the dashboards aggregate on the fly. That is fast enough
+for millions of rows per day per organization; materialized rollups can come later for longer retention.
+The schema is created by `portica-analytics` at startup; unknown JSON fields are ignored, so gateways can
+add fields before the table has them.
+
+**The query API lives in management, not in portica-analytics.** Dashboards need the same sign-in and
+organization permissions (`ANALYTICS_READ`) as everything else, which management already enforces.
+Every query is scoped to the caller's organization and a window of at most 31 days, values reach
+ClickHouse only as typed query parameters, and breakdown dimensions come from a fixed list.
+
+**Trace sessions are short-lived and opt-in.** A session targets one deployed proxy in one environment,
+optionally only calls with a given header value or client IP, runs at most 10 minutes and captures at most
+100 calls (3 sessions per proxy and environment at a time). Gateways poll active sessions every 2 seconds,
+so there is no cost on the request path when nobody is tracing. Each traced call records every step (ran,
+skipped by its condition, faulted, or failed and continued), the target call and the response; captured
+calls go through Kafka to ClickHouse and are kept for a day. Authorization, cookie and API key headers,
+credential query parameters, `private.*` variables and anything named like a secret, token or password
+are masked before they leave the gateway. Bodies are not captured.
+
+**Live updates over Server-Sent Events.** The console reads `.../stream` with `fetch` (EventSource can't
+send the bearer token) and reconnects on its own; management polls ClickHouse once a second per open
+stream. SSE is plain HTTP, so it passes proxies and load balancers that block WebSockets. Starting and
+stopping traces is recorded in the audit log.
+
+## Next: Phase 7
+
+AI gateway and MCP gateway: LLM routing, token quotas and prompt policies; and MCP tool access with the
+same products, apps and analytics.

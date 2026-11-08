@@ -35,6 +35,11 @@ portica:
       max-request-body-bytes: 10485760
       max-response-body-bytes: 10485760
       trust-forwarded-for: false   # true only behind a load balancer that sets X-Forwarded-For
+    analytics:
+      enabled: ${PORTICA_ANALYTICS_ENABLED:true}   # publish api events and trace transactions to Kafka
+      bootstrap-servers: ${PORTICA_KAFKA_BOOTSTRAP:localhost:9092}
+      queue-capacity: 10000                          # events buffered while Kafka is slow; extra ones are dropped
+      # gateway-id: defaults to the host name
     oauth:
       token-ttl: 1h                # lifetime of access tokens from POST /{org}/{env}/oauth2/token
     auth:

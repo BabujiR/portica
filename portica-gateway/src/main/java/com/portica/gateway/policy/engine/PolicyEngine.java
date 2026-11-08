@@ -1,6 +1,7 @@
 package com.portica.gateway.policy.engine;
 
 import com.portica.common.http.PorticaHeaders;
+import com.portica.gateway.analytics.AnalyticsRecorder;
 import com.portica.gateway.config.PolicyEngineProperties;
 import com.portica.gateway.policy.Headers;
 import com.portica.gateway.policy.MessageContext;
@@ -8,6 +9,7 @@ import com.portica.gateway.policy.PolicyFault;
 import com.portica.gateway.policy.PolicyPhase;
 import com.portica.gateway.policy.ProxyRequest;
 import com.portica.gateway.routing.PreflightPassThroughWebFilter;
+import com.portica.gateway.trace.TraceSessionRegistry;
 import com.portica.gateway.policy.ProxyResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +33,7 @@ import reactor.core.publisher.Mono;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.time.Instant;
 import java.util.concurrent.TimeoutException;
 
 import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.addOriginalRequestUrl;
@@ -52,27 +55,35 @@ public class PolicyEngine {
     private static final String MATCHED_FLOW = "portica.matchedFlow";
 
     private final PolicyEngineProperties properties;
+    private final AnalyticsRecorder analytics;
+    private final TraceSessionRegistry traces;
 
-    public PolicyEngine(PolicyEngineProperties properties) {
+    public PolicyEngine(PolicyEngineProperties properties, AnalyticsRecorder analytics, TraceSessionRegistry traces) {
         this.properties = properties;
+        this.analytics = analytics;
+        this.traces = traces;
     }
 
     public Mono<Void> handle(ServerWebExchange exchange, GatewayFilterChain chain, CompiledProxy proxy,
                              String gatewayPrefix, String targetPath) {
+        Instant startedAt = Instant.now();
+        long startNanos = System.nanoTime();
         MessageContext ctx = newContext(exchange, proxy, gatewayPrefix);
+        ctx.trace(traces.start(ctx));
         Mono<Void> loadBody = proxy.requiresRequestBody() ? readRequestBody(exchange.getRequest(), ctx) : Mono.empty();
         return loadBody
                 .then(Mono.defer(() -> runRequestFlow(proxy, ctx)))
                 .then(Mono.defer(() -> ctx.isShortCircuited()
                         ? respondDirectly(exchange, proxy, ctx)
                         : forward(exchange, chain, proxy, ctx, targetPath)))
-                .onErrorResume(PolicyFault.class, fault -> handleFault(exchange, proxy, ctx, fault));
+                .onErrorResume(PolicyFault.class, fault -> handleFault(exchange, proxy, ctx, fault))
+                .doFinally(signal -> analytics.complete(exchange, ctx, startedAt, startNanos, signal));
     }
 
     // ------------------------------------------------------------------ flows
 
     Mono<Void> runRequestFlow(CompiledProxy proxy, MessageContext ctx) {
-        return FlowExecutor.run(proxy.preRequest(), ctx)
+        return FlowExecutor.run(proxy.preRequest(), ctx, "PreFlow request")
                 .then(Mono.defer(() -> {
                     CompiledFlow flow = proxy.match(ctx.resolver());
                     if (flow == null) {
@@ -80,18 +91,18 @@ public class PolicyEngine {
                     }
                     ctx.attributes().put(MATCHED_FLOW, flow);
                     ctx.setVariable("current.flow.name", flow.name());
-                    return FlowExecutor.run(flow.request(), ctx);
+                    return FlowExecutor.run(flow.request(), ctx, flow.name() + " request");
                 }))
-                .then(Mono.defer(() -> FlowExecutor.run(proxy.postRequest(), ctx)));
+                .then(Mono.defer(() -> FlowExecutor.run(proxy.postRequest(), ctx, "PostFlow request")));
     }
 
     Mono<Void> runResponseFlow(CompiledProxy proxy, MessageContext ctx) {
-        return FlowExecutor.run(proxy.preResponse(), ctx)
+        return FlowExecutor.run(proxy.preResponse(), ctx, "PreFlow response")
                 .then(Mono.defer(() -> {
                     CompiledFlow flow = (CompiledFlow) ctx.attributes().get(MATCHED_FLOW);
-                    return flow == null ? Mono.empty() : FlowExecutor.run(flow.response(), ctx);
+                    return flow == null ? Mono.empty() : FlowExecutor.run(flow.response(), ctx, flow.name() + " response");
                 }))
-                .then(Mono.defer(() -> FlowExecutor.run(proxy.postResponse(), ctx)))
+                .then(Mono.defer(() -> FlowExecutor.run(proxy.postResponse(), ctx, "PostFlow response")))
                 .then(Mono.defer(() -> Flux.fromIterable(ctx.responseCallbacks())
                         .concatMap(callback -> callback.apply(ctx)).then()));
     }
@@ -99,10 +110,11 @@ public class PolicyEngine {
     private Mono<Void> runFaultRules(CompiledProxy proxy, MessageContext ctx) {
         for (CompiledFaultRule rule : proxy.faultRules()) {
             if (rule.condition().test(ctx.resolver())) {
-                return FlowExecutor.run(rule.steps(), ctx);
+                return FlowExecutor.run(rule.steps(), ctx, "Fault rule " + rule.name());
             }
         }
-        return proxy.defaultFaultRule() == null ? Mono.empty() : FlowExecutor.run(proxy.defaultFaultRule().steps(), ctx);
+        return proxy.defaultFaultRule() == null ? Mono.empty()
+                : FlowExecutor.run(proxy.defaultFaultRule().steps(), ctx, "Default fault rule");
     }
 
     // ------------------------------------------------------------------ request side
@@ -191,6 +203,12 @@ public class PolicyEngine {
         }
 
         ServerHttpResponse response = exchange.getResponse();
+        AnalyticsRecorder.targetStarted(ctx, path.isEmpty() ? "/" : path);
+        response.beforeCommit(() -> {
+            AnalyticsRecorder.targetResponded(ctx);
+            ctx.attributes().putIfAbsent("portica.target.status", status(response));
+            return Mono.empty();
+        });
         ServerWebExchange.Builder next = exchange.mutate().request(mutated);
         if (proxy.bufferedResponse()) {
             next.response(new BufferingResponse(response, proxy, ctx));
@@ -258,6 +276,8 @@ public class PolicyEngine {
         private Mono<Void> process(byte[] bytes) {
             processed = true;
             ServerHttpResponse delegate = getDelegate();
+            AnalyticsRecorder.targetResponded(ctx);
+            ctx.attributes().putIfAbsent("portica.target.status", status(delegate));
             ctx.beginResponse(new ProxyResponse(status(delegate), Headers.copy(delegate.getHeaders()), bytes));
             return runResponseFlow(proxy, ctx).then(Mono.defer(() -> write(delegate, ctx)));
         }
