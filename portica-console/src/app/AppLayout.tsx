@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Avatar, Button, Dropdown, Flex, Layout, Menu, Select, Space, Switch, Tag, Tooltip, Typography, theme } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  ApiOutlined, AppstoreOutlined, CloudServerOutlined, ClusterOutlined, DashboardOutlined, DatabaseOutlined,
+  ApiOutlined, AppstoreOutlined, AuditOutlined, LineChartOutlined, CloudServerOutlined, ClusterOutlined, DashboardOutlined, DatabaseOutlined,
   LogoutOutlined, MobileOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SafetyOutlined, ShareAltOutlined,
   SunOutlined, TeamOutlined, UserOutlined,
 } from '@ant-design/icons';
@@ -25,6 +25,7 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
   {
     items: [
       { key: 'dashboard', label: 'Overview', icon: <DashboardOutlined /> },
+      { key: 'analytics', label: 'Analytics', icon: <LineChartOutlined />, permission: 'ANALYTICS_READ' },
       { key: 'proxies', label: 'API Proxies', icon: <ApiOutlined />, permission: 'PROXY_READ' },
       { key: 'sharedflows', label: 'Shared Flows', icon: <ShareAltOutlined />, permission: 'PROXY_READ' },
     ],
@@ -47,7 +48,10 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
   },
   {
     group: 'Administer',
-    items: [{ key: 'members', label: 'Users & Roles', icon: <SafetyOutlined />, permission: 'MEMBER_READ' }],
+    items: [
+      { key: 'members', label: 'Users & Roles', icon: <SafetyOutlined />, permission: 'MEMBER_READ' },
+      { key: 'audit', label: 'Audit Log', icon: <AuditOutlined />, permission: 'AUDIT_READ' },
+    ],
   },
 ];
 

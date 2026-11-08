@@ -6,6 +6,20 @@ spring:
   application:
     name: portica-analytics
 
+portica:
+  analytics:
+    enabled: true
+    kafka:
+      bootstrap-servers: ${PORTICA_KAFKA_BOOTSTRAP:localhost:9092}
+      group-id: portica-analytics
+      partitions: 3
+      replication-factor: 1
+    clickhouse:
+      url: ${PORTICA_CLICKHOUSE_URL:http://localhost:8123}
+      database: ${PORTICA_CLICKHOUSE_DATABASE:portica_analytics}
+      user: ${PORTICA_CLICKHOUSE_USER:portica}
+      password: ${PORTICA_CLICKHOUSE_PASSWORD:portica}
+
 management:
   endpoints:
     web:

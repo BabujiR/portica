@@ -2,6 +2,8 @@ package com.portica.management.runtime;
 
 import com.portica.management.runtime.RuntimeDtos.RuntimeEnvironmentConfig;
 import com.portica.management.runtime.RuntimeDtos.RuntimeIndex;
+import com.portica.management.trace.TraceDtos.RuntimeTraceSession;
+import com.portica.management.trace.TraceSessionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -9,6 +11,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * Internal API polled by gateways (service accounts with the {@code portica-runtime} realm role).
@@ -20,9 +24,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class RuntimeConfigController {
 
     private final RuntimeConfigService runtime;
+    private final TraceSessionService traces;
 
-    public RuntimeConfigController(RuntimeConfigService runtime) {
+    public RuntimeConfigController(RuntimeConfigService runtime, TraceSessionService traces) {
         this.runtime = runtime;
+        this.traces = traces;
     }
 
     @GetMapping("/environments")
@@ -38,5 +44,12 @@ public class RuntimeConfigController {
     @Operation(summary = "Runtime snapshot of one environment: deployed proxies with resolved targets")
     public RuntimeEnvironmentConfig snapshot(@PathVariable String org, @PathVariable String env) {
         return runtime.snapshot(org, env);
+    }
+
+    @GetMapping("/trace-sessions")
+    @PreAuthorize("@authz.canReadRuntimeConfig()")
+    @Operation(summary = "Trace sessions active right now", description = "Gateways poll this every few seconds.")
+    public List<RuntimeTraceSession> traceSessions() {
+        return traces.active();
     }
 }
