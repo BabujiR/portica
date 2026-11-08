@@ -22,8 +22,9 @@ public class OpenAiProvider implements LlmProvider {
 
     private final WebClient web;
 
-    public OpenAiProvider(WebClient.Builder builder) {
-        this.web = builder.codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024)).build();
+    /** Spring Boot 4 auto-configures {@code WebClient.Builder} only with spring-boot-webclient, so build our own. */
+    public OpenAiProvider() {
+        this.web = WebClient.builder().codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024)).build();
     }
 
     @Override

@@ -31,8 +31,9 @@ public class AnthropicProvider implements LlmProvider {
 
     private final WebClient web;
 
-    public AnthropicProvider(WebClient.Builder builder) {
-        this.web = builder.codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024)).build();
+    /** Spring Boot 4 auto-configures {@code WebClient.Builder} only with spring-boot-webclient, so build our own. */
+    public AnthropicProvider() {
+        this.web = WebClient.builder().codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024)).build();
     }
 
     @Override
