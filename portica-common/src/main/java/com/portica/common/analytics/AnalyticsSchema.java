@@ -11,6 +11,8 @@ public final class AnalyticsSchema {
 
     public static final String API_EVENTS = "api_events";
     public static final String TRACE_TRANSACTIONS = "trace_transactions";
+    public static final String AI_REQUESTS = "ai_requests";
+    public static final String MCP_TOOL_CALLS = "mcp_tool_calls";
 
     /** Raw API calls, kept 90 days. Sorted for the console's typical filters (org, env, proxy, time). */
     public static final String CREATE_API_EVENTS = """
@@ -61,7 +63,62 @@ public final class AnalyticsSchema {
             TTL toDateTime(event_time) + INTERVAL 1 DAY
             """;
 
-    public static final List<String> STATEMENTS = List.of(CREATE_API_EVENTS, CREATE_TRACE_TRANSACTIONS);
+    /** LLM calls through the AI gateway (Phase 7), kept 90 days. Cost in US dollars. */
+    public static final String CREATE_AI_REQUESTS = """
+            CREATE TABLE IF NOT EXISTS ai_requests (
+                event_time         DateTime64(3, 'UTC'),
+                request_id         String,
+                organization       LowCardinality(String),
+                environment        LowCardinality(String),
+                ai_proxy           LowCardinality(String),
+                model_alias        LowCardinality(String),
+                provider           LowCardinality(String),
+                model              LowCardinality(String),
+                app                LowCardinality(String),
+                developer          String,
+                status             UInt16,
+                total_ms           UInt32,
+                first_token_ms     UInt32,
+                streamed           UInt8,
+                prompt_tokens      UInt32,
+                completion_tokens  UInt32,
+                total_tokens       UInt32,
+                cost_usd           Float64,
+                attempts           UInt8,
+                pii_redactions     UInt16,
+                error              LowCardinality(String)
+            )
+            ENGINE = MergeTree
+            PARTITION BY toYYYYMMDD(event_time)
+            ORDER BY (organization, environment, ai_proxy, event_time)
+            TTL toDateTime(event_time) + INTERVAL 90 DAY
+            """;
+
+    /** MCP tool calls (Phase 7), kept 90 days. */
+    public static final String CREATE_MCP_TOOL_CALLS = """
+            CREATE TABLE IF NOT EXISTS mcp_tool_calls (
+                event_time      DateTime64(3, 'UTC'),
+                request_id      String,
+                organization    LowCardinality(String),
+                environment     LowCardinality(String),
+                mcp_server      LowCardinality(String),
+                server_type     LowCardinality(String),
+                tool            LowCardinality(String),
+                app             LowCardinality(String),
+                developer       String,
+                is_error        UInt8,
+                upstream_status UInt16,
+                total_ms        UInt32,
+                error           String
+            )
+            ENGINE = MergeTree
+            PARTITION BY toYYYYMMDD(event_time)
+            ORDER BY (organization, environment, mcp_server, event_time)
+            TTL toDateTime(event_time) + INTERVAL 90 DAY
+            """;
+
+    public static final List<String> STATEMENTS = List.of(CREATE_API_EVENTS, CREATE_TRACE_TRANSACTIONS,
+            CREATE_AI_REQUESTS, CREATE_MCP_TOOL_CALLS);
 
     private AnalyticsSchema() {
     }

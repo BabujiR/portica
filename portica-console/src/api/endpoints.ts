@@ -1,5 +1,7 @@
 import { api, path } from './client';
 import type {
+  AiDimension, AiProvider, AiProviderBody, AiProxy, AiProxyBody, AiSummary, AiTimeseries, AiTop,
+  McpCall, McpServer, McpServerBody, McpSummary, McpToolView, McpTop,
   AnalyticsDimension, AnalyticsEvents, AnalyticsSummary, AnalyticsTimeseries, AnalyticsTop, AuditEvent,
   StartTraceRequest, TraceSession, TraceTransaction,
   ApiProduct, ApiProductRequest, ApiProxy, Credential, Deployment, Developer, DeveloperApp, Environment,
@@ -248,3 +250,64 @@ export const listAuditEvents = (org: string, f: AuditFilter) =>
   api<Page<AuditEvent>>(path('/organizations/{0}/audit-events', org), { query: { ...f } });
 export const listAuditResourceTypes = (org: string) =>
   api<string[]>(path('/organizations/{0}/audit-events/resource-types', org));
+
+// ------------------------------------------------------------------ AI gateway (Phase 7)
+
+export const listAiProviders = (org: string) => api<AiProvider[]>(path('/organizations/{0}/ai/providers', org));
+export const createAiProvider = (org: string, body: AiProviderBody) =>
+  api<AiProvider>(path('/organizations/{0}/ai/providers', org), { method: 'POST', body });
+export const updateAiProvider = (org: string, name: string, body: AiProviderBody) =>
+  api<AiProvider>(path('/organizations/{0}/ai/providers/{1}', org, name), { method: 'PUT', body });
+export const deleteAiProvider = (org: string, name: string) =>
+  api<void>(path('/organizations/{0}/ai/providers/{1}', org, name), { method: 'DELETE' });
+
+export const listAiProxies = (org: string) => api<AiProxy[]>(path('/organizations/{0}/ai/proxies', org));
+export const createAiProxy = (org: string, body: AiProxyBody) =>
+  api<AiProxy>(path('/organizations/{0}/ai/proxies', org), { method: 'POST', body });
+export const updateAiProxy = (org: string, name: string, body: AiProxyBody) =>
+  api<AiProxy>(path('/organizations/{0}/ai/proxies/{1}', org, name), { method: 'PUT', body });
+export const deleteAiProxy = (org: string, name: string) =>
+  api<void>(path('/organizations/{0}/ai/proxies/{1}', org, name), { method: 'DELETE' });
+
+export interface AiFilter extends AnalyticsFilter {
+  aiProxy?: string;
+}
+
+export const getAiSummary = (org: string, f: AiFilter) =>
+  api<AiSummary>(analyticsPath(org, 'ai/summary'), { query: { ...f } });
+export const getAiTimeseries = (org: string, f: AiFilter) =>
+  api<AiTimeseries>(analyticsPath(org, 'ai/timeseries'), { query: { ...f } });
+export const getAiTop = (org: string, dimension: AiDimension, f: AiFilter, limit = 10) =>
+  api<AiTop>(analyticsPath(org, 'ai/top'), { query: { ...f, dimension, limit } });
+
+// ------------------------------------------------------------------ MCP (Phase 7)
+
+export const listMcpServers = (org: string) => api<McpServer[]>(path('/organizations/{0}/mcp/servers', org));
+export const getMcpServer = (org: string, name: string) =>
+  api<McpServer>(path('/organizations/{0}/mcp/servers/{1}', org, name));
+export const createMcpServer = (org: string, body: McpServerBody) =>
+  api<McpServer>(path('/organizations/{0}/mcp/servers', org), { method: 'POST', body });
+export const updateMcpServer = (org: string, name: string, body: McpServerBody) =>
+  api<McpServer>(path('/organizations/{0}/mcp/servers/{1}', org, name), { method: 'PUT', body });
+export const deleteMcpServer = (org: string, name: string) =>
+  api<void>(path('/organizations/{0}/mcp/servers/{1}', org, name), { method: 'DELETE' });
+export const listMcpTools = (org: string, name: string, environment?: string) =>
+  api<McpToolView[]>(path('/organizations/{0}/mcp/servers/{1}/tools', org, name), { query: { environment } });
+export const authorizeMcpServer = (org: string, name: string) =>
+  api<{ authorizationUrl: string; expiresAt: string }>(path('/organizations/{0}/mcp/servers/{1}/oauth/authorize', org, name),
+    { method: 'POST' });
+export const connectMcpServer = (org: string, name: string) =>
+  api<McpServer>(path('/organizations/{0}/mcp/servers/{1}/oauth/connect', org, name), { method: 'POST' });
+export const disconnectMcpServer = (org: string, name: string) =>
+  api<McpServer>(path('/organizations/{0}/mcp/servers/{1}/oauth/token', org, name), { method: 'DELETE' });
+
+export interface McpFilter extends AnalyticsFilter {
+  mcpServer?: string;
+}
+
+export const getMcpSummary = (org: string, f: McpFilter) =>
+  api<McpSummary>(analyticsPath(org, 'mcp/summary'), { query: { ...f } });
+export const getMcpTop = (org: string, dimension: string, f: McpFilter, limit = 10) =>
+  api<McpTop>(analyticsPath(org, 'mcp/top'), { query: { ...f, dimension, limit } });
+export const listMcpCalls = (org: string, f: McpFilter, limit = 50) =>
+  api<McpCall[]>(analyticsPath(org, 'mcp/calls'), { query: { ...f, limit } });

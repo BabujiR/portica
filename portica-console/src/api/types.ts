@@ -469,3 +469,249 @@ export interface AuditEvent {
   requestId?: string | null;
   occurredAt: string;
 }
+
+// ------------------------------------------------------------------ AI gateway (Phase 7)
+
+export type AiProviderType = 'OPENAI' | 'ANTHROPIC';
+export type ClientAuth = 'API_KEY' | 'OAUTH';
+export type PiiAction = 'OFF' | 'REDACT' | 'BLOCK';
+export type PiiType = 'EMAIL' | 'PHONE' | 'CREDIT_CARD' | 'SSN' | 'IP_ADDRESS' | 'IBAN';
+
+export interface AiModel {
+  name: string;
+  inputCostPerMillion: number;
+  outputCostPerMillion: number;
+}
+
+export interface AiProvider extends Audit {
+  id: string;
+  name: string;
+  displayName: string;
+  type: AiProviderType;
+  baseUrl: string;
+  models: AiModel[];
+  apiKeySet: boolean;
+  apiKeyHint?: string | null;
+  enabled: boolean;
+}
+
+export interface AiProviderBody {
+  name?: string;
+  displayName?: string;
+  type?: AiProviderType;
+  baseUrl?: string;
+  apiKey?: string | null;
+  models: AiModel[];
+  enabled?: boolean;
+}
+
+export interface AiTarget {
+  provider: string;
+  model: string;
+}
+
+export interface AiRoute {
+  name: string;
+  targets: AiTarget[];
+}
+
+export interface TokenQuota {
+  tokens: number;
+  interval?: number;
+  timeUnit?: 'minute' | 'hour' | 'day' | 'week' | 'month';
+}
+
+export interface PiiPolicy {
+  action: PiiAction;
+  types: PiiType[];
+  scanResponses: boolean;
+}
+
+export interface AiProxy extends Audit {
+  id: string;
+  name: string;
+  displayName: string;
+  description?: string | null;
+  environments: string[];
+  auth: ClientAuth;
+  routes: AiRoute[];
+  defaultRoute: string;
+  allowProviderModels: boolean;
+  tokenQuota?: TokenQuota | null;
+  pii: PiiPolicy;
+  timeoutSeconds: number;
+  maxOutputTokens?: number | null;
+  gatewayProxy: string;
+  gatewayPath: string;
+}
+
+export interface AiProxyBody {
+  name?: string;
+  displayName?: string;
+  description?: string;
+  environments?: string[];
+  auth?: ClientAuth;
+  routes: AiRoute[];
+  defaultRoute?: string;
+  allowProviderModels?: boolean;
+  tokenQuota?: TokenQuota | null;
+  pii?: PiiPolicy;
+  timeoutSeconds?: number;
+  maxOutputTokens?: number | null;
+}
+
+export interface AiSummary {
+  window: AnalyticsWindow;
+  requests: number;
+  errors: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  avgMs: number;
+  p95Ms: number;
+  avgFirstTokenMs: number;
+  fallbacks: number;
+  piiRedactions: number;
+}
+
+export interface AiPoint {
+  time: string;
+  requests: number;
+  errors: number;
+  tokens: number;
+  costUsd: number;
+}
+
+export interface AiTimeseries {
+  window: AnalyticsWindow;
+  bucketSeconds: number;
+  points: AiPoint[];
+}
+
+export type AiDimension = 'ai_proxy' | 'model' | 'model_alias' | 'provider' | 'app' | 'developer' | 'environment' | 'error';
+
+export interface AiTopEntry {
+  name: string;
+  requests: number;
+  errors: number;
+  tokens: number;
+  costUsd: number;
+  avgMs: number;
+}
+
+export interface AiTop {
+  window: AnalyticsWindow;
+  dimension: AiDimension;
+  entries: AiTopEntry[];
+}
+
+// ------------------------------------------------------------------ MCP (Phase 7)
+
+export type McpServerType = 'OPENAPI' | 'REMOTE';
+export type RemoteAuth = 'NONE' | 'BEARER' | 'OAUTH_CLIENT_CREDENTIALS' | 'OAUTH_AUTHORIZATION_CODE';
+
+export interface McpOAuthStatus {
+  connected: boolean;
+  expiresAt?: string | null;
+  scope?: string | null;
+  issuer?: string | null;
+  tokenEndpoint?: string | null;
+  authorizationEndpoint?: string | null;
+  refreshable: boolean;
+}
+
+export interface McpRemote {
+  url: string;
+  auth: RemoteAuth;
+  clientId?: string | null;
+  scopes: string[];
+  authorizationServer?: string | null;
+  secretSet: boolean;
+  oauth?: McpOAuthStatus | null;
+}
+
+export interface McpServer extends Audit {
+  id: string;
+  name: string;
+  displayName: string;
+  description?: string | null;
+  environments: string[];
+  auth: ClientAuth;
+  type: McpServerType;
+  apiProxy?: string | null;
+  tools: string[];
+  remote?: McpRemote | null;
+  timeoutSeconds: number;
+  gatewayProxy: string;
+  gatewayPath: string;
+}
+
+export interface McpRemoteBody {
+  url: string;
+  auth: RemoteAuth;
+  bearerToken?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+  authorizationServer?: string;
+}
+
+export interface McpServerBody {
+  name?: string;
+  displayName?: string;
+  description?: string;
+  environments?: string[];
+  auth?: ClientAuth;
+  type?: McpServerType;
+  apiProxy?: string;
+  tools?: string[];
+  remote?: McpRemoteBody;
+  timeoutSeconds?: number;
+}
+
+export interface McpToolView {
+  name: string;
+  title?: string | null;
+  description?: string | null;
+  inputSchema: Record<string, unknown>;
+  annotations?: Record<string, unknown> | null;
+  http?: { method: string; path: string; parameters: Array<{ name: string; in: string }>; hasBody: boolean; bodyContentType?: string | null } | null;
+}
+
+export interface McpSummary {
+  window: AnalyticsWindow;
+  calls: number;
+  errors: number;
+  errorRate: number;
+  avgMs: number;
+  p95Ms: number;
+  tools: number;
+  apps: number;
+}
+
+export interface McpTopEntry {
+  name: string;
+  calls: number;
+  errors: number;
+  avgMs: number;
+}
+
+export interface McpTop {
+  window: AnalyticsWindow;
+  dimension: string;
+  entries: McpTopEntry[];
+}
+
+export interface McpCall {
+  time: string;
+  requestId: string;
+  environment: string;
+  mcpServer: string;
+  tool: string;
+  app: string;
+  error: boolean;
+  upstreamStatus: number;
+  totalMs: number;
+  message: string;
+}

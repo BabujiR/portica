@@ -23,6 +23,21 @@ public final class PorticaHeaders {
     /** Requests a live trace session capture for this call (Phase 6). */
     public static final String TRACE = "X-Portica-Trace";
 
+    /** Calling app, set by the gateway for AI and MCP services after it verified the credential (Phase 7). */
+    public static final String APP = "X-Portica-App";
+
+    /** Developer who owns the calling app (Phase 7). */
+    public static final String DEVELOPER = "X-Portica-Developer";
+
+    /** API product that authorized the call (Phase 7). */
+    public static final String API_PRODUCT = "X-Portica-Api-Product";
+
+    /**
+     * Shared secret the gateway adds when forwarding to the AI and MCP services, so they only accept
+     * calls that went through the gateway's policies (Phase 7).
+     */
+    public static final String INTERNAL_TOKEN = "X-Portica-Internal-Token";
+
     private PorticaHeaders() {
     }
 }

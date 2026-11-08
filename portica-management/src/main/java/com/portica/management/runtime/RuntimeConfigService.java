@@ -60,11 +60,14 @@ public class RuntimeConfigService {
     private final ApiProductRepository products;
     private final AppCredentialRepository credentials;
     private final KeyValueMapService keyValueMaps;
+    private final ServicesRuntime services;
 
     public RuntimeConfigService(EnvironmentRepository environmentRepository, EnvironmentFinder environments,
                                 DeploymentRepository deployments, TargetServerRepository targetServers,
                                 SharedFlowDeploymentRepository sharedFlowDeployments, ApiProductRepository products,
-                                AppCredentialRepository credentials, KeyValueMapService keyValueMaps) {
+                                AppCredentialRepository credentials, KeyValueMapService keyValueMaps,
+                                ServicesRuntime services) {
+        this.services = services;
         this.environmentRepository = environmentRepository;
         this.environments = environments;
         this.deployments = deployments;
@@ -114,6 +117,8 @@ public class RuntimeConfigService {
                     revision.getBasePath(), targetUri, target.path(), revision.getConnectTimeoutMs(),
                     revision.getReadTimeoutMs(), revision.policies(), revision.flows()));
         }
+        // AI proxies and MCP servers reach traffic through generated gateway proxies (Phase 7)
+        proxies.addAll(services.gatewayProxies(environment));
         List<RuntimeSharedFlow> sharedFlows = sharedFlowDeployments.findLive(environment.getId()).stream()
                 .map(d -> new RuntimeSharedFlow(d.getSharedFlow().getName(), d.getRevision().getRevision(),
                         d.getRevision().policies(), d.getRevision().steps()))
@@ -131,6 +136,30 @@ public class RuntimeConfigService {
                 .toList();
         return new RuntimeEnvironmentConfig(org, env, environment.getConfigVersion(), now, proxies,
                 sharedFlows, offered.stream().map(RuntimeConfigService::runtimeProduct).toList(), liveCredentials, maps);
+    }
+
+    /** AI gateway feed for one environment (Phase 7). */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public RuntimeDtos.RuntimeAiConfig aiSnapshot(String org, String env) {
+        Environment environment = runtimeEnvironment(org, env);
+        return new RuntimeDtos.RuntimeAiConfig(org, env, environment.getConfigVersion(), Instant.now(),
+                services.aiProviders(environment), services.aiProxies(environment));
+    }
+
+    /** MCP feed for one environment (Phase 7). */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public RuntimeDtos.RuntimeMcpConfig mcpSnapshot(String org, String env) {
+        Environment environment = runtimeEnvironment(org, env);
+        return new RuntimeDtos.RuntimeMcpConfig(org, env, environment.getConfigVersion(), Instant.now(),
+                services.mcpServers(environment));
+    }
+
+    private Environment runtimeEnvironment(String org, String env) {
+        try {
+            return environments.get(org, env);
+        } catch (ResourceNotFoundException e) {
+            throw new ResourceNotFoundException("Runtime environment", org + "/" + env);
+        }
     }
 
     private static RuntimeApiProduct runtimeProduct(ApiProduct p) {

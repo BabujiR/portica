@@ -107,6 +107,43 @@ class AnalyticsQueryIntegrationTest {
         assertThat(empty.timeseries("acme", null, null, null, null).points()).allMatch(p -> p.requests() == 0);
     }
 
+    @Test
+    void aiCostsAndMcpToolCalls() {
+        String ai = """
+                {"event_time":"%s","request_id":"%s","organization":"acme","environment":"dev","ai_proxy":"assistant",
+                 "model_alias":"fast","provider":"%s","model":"m","app":"%s","developer":"","status":%d,"total_ms":100,
+                 "first_token_ms":0,"streamed":0,"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,
+                 "cost_usd":%s,"attempts":%d,"pii_redactions":%d,"error":""}""".replace("\n", "");
+        client.insertJsonEachRow("ai_requests", List.of(
+                ai.formatted(NOW.minusSeconds(60), java.util.UUID.randomUUID(), "openai", "shop", 200, "0.002", 1, 0),
+                ai.formatted(NOW.minusSeconds(120), java.util.UUID.randomUUID(), "anthropic", "shop", 200, "0.010", 2, 3),
+                ai.formatted(NOW.minusSeconds(180), java.util.UUID.randomUUID(), "openai", "crm", 429, "0", 1, 0)));
+        AiMcpAnalyticsService service = new AiMcpAnalyticsService(new AnalyticsStore(client));
+        AiMcpAnalyticsService.AiSummary summary = service.aiSummary("acme", NOW.minus(Duration.ofHours(1)), NOW, null, null);
+        assertThat(summary.requests()).isEqualTo(3);
+        assertThat(summary.errors()).isEqualTo(1);
+        assertThat(summary.totalTokens()).isEqualTo(45);
+        assertThat(summary.costUsd()).isEqualTo(0.012);
+        assertThat(summary.fallbacks()).isEqualTo(1);
+        assertThat(summary.piiRedactions()).isEqualTo(3);
+        assertThat(service.aiTop("acme", "provider", NOW.minus(Duration.ofHours(1)), NOW, null, null, 5).entries())
+                .extracting(e -> e.name() + "=" + e.costUsd()).containsExactly("anthropic=0.01", "openai=0.002");
+
+        String mcp = """
+                {"event_time":"%s","request_id":"r","organization":"acme","environment":"dev","mcp_server":"petstore",
+                 "server_type":"OPENAPI","tool":"%s","app":"agent","developer":"","is_error":%d,"upstream_status":%d,
+                 "total_ms":40,"error":""}""".replace("\n", "");
+        client.insertJsonEachRow("mcp_tool_calls", List.of(mcp.formatted(NOW.minusSeconds(30), "get_pet", 0, 200),
+                mcp.formatted(NOW.minusSeconds(40), "get_pet", 1, 404), mcp.formatted(NOW.minusSeconds(50), "add_pet", 0, 201)));
+        AiMcpAnalyticsService.McpSummary calls = service.mcpSummary("acme", NOW.minus(Duration.ofHours(1)), NOW, null, "petstore");
+        assertThat(calls.calls()).isEqualTo(3);
+        assertThat(calls.errors()).isEqualTo(1);
+        assertThat(calls.tools()).isEqualTo(2);
+        assertThat(service.mcpTop("acme", "tool", NOW.minus(Duration.ofHours(1)), NOW, null, null, 5).entries().getFirst().name())
+                .isEqualTo("get_pet");
+        assertThat(service.mcpCalls("acme", NOW.minus(Duration.ofHours(1)), NOW, null, null, 10)).hasSize(3);
+    }
+
     private static String row(String org, String env, String proxy, Instant time, int status, int ms, String app) {
         return """
                 {"event_time":"%s","request_id":"%s","organization":"%s","environment":"%s","api_proxy":"%s",
