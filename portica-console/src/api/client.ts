@@ -57,7 +57,9 @@ export async function api<T>(p: string, options: RequestOptions = {}): Promise<T
     await login();
     throw new ApiError(401, { title: 'Signing in again' });
   }
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  // text responses (OpenAPI documents) are served as text/plain; problems still come back as JSON
+  const accept = options.text ? 'text/plain, application/problem+json, application/json' : 'application/json';
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: accept };
   if (options.body !== undefined) headers['Content-Type'] = 'application/json';
 
   const response = await fetch(url(p, options.query), {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SseParser } from './sse';
+import { SseParser } from './sseParser';
 
 describe('SseParser', () => {
   it('parses named events with ids and multi-line data', () => {

@@ -91,7 +91,7 @@ export function McpServerFields({ form, editing, server }: { form: FormInstance<
         </>
       ) : (
         <>
-          <Form.Item name={['remote', 'url']} label="MCP server URL" rules={[{ required: true }, { type: 'url', message: 'An http(s) URL' }]}>
+          <Form.Item name={['remote', 'url']} label="MCP server URL" rules={[{ required: true }, { pattern: /^https?:\/\/[^\s/:?#]+(:\d{1,5})?([/?#]\S*)?$/, message: 'An http(s) URL' }]}>
             <Input placeholder="https://mcp.example.com/mcp" />
           </Form.Item>
           <Form.Item name={['remote', 'auth']} label="Portica authenticates to it with">
