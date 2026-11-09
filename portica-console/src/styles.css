@@ -20,3 +20,16 @@ body {
     display: none;
   }
 }
+
+/* developer portal: request and response bodies */
+.portal-response {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 12px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.08);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

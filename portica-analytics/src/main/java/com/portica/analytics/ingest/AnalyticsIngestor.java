@@ -51,6 +51,12 @@ public class AnalyticsIngestor implements SmartLifecycle {
 
     private static final Logger log = LoggerFactory.getLogger(AnalyticsIngestor.class);
     private static final Duration MAX_BACKOFF = Duration.ofSeconds(30);
+    /** Topic to ClickHouse table. Messages use the column names, so rows go in as they are. */
+    static final Map<String, String> TABLES = Map.of(
+            AnalyticsTopics.API_EVENTS, AnalyticsSchema.API_EVENTS,
+            AnalyticsTopics.TRACE_TRANSACTIONS, AnalyticsSchema.TRACE_TRANSACTIONS,
+            AnalyticsTopics.AI_REQUESTS, AnalyticsSchema.AI_REQUESTS,
+            AnalyticsTopics.MCP_TOOL_CALLS, AnalyticsSchema.MCP_TOOL_CALLS);
 
     private final AnalyticsIngestProperties properties;
     private final ClickHouseClient clickHouse;
@@ -110,8 +116,7 @@ public class AnalyticsIngestor implements SmartLifecycle {
         createTopics();
         clickHouse.createDatabaseIfMissing();
         AnalyticsSchema.STATEMENTS.forEach(clickHouse::execute);
-        log.info("Ingesting {} and {} from {} into ClickHouse {}/{}", AnalyticsTopics.API_EVENTS,
-                AnalyticsTopics.TRACE_TRANSACTIONS, properties.kafka().bootstrapServers(),
+        log.info("Ingesting {} from {} into ClickHouse {}/{}", TABLES.keySet(), properties.kafka().bootstrapServers(),
                 properties.clickhouse().url(), properties.clickhouse().database());
     }
 
@@ -127,7 +132,11 @@ public class AnalyticsIngestor implements SmartLifecycle {
                     new NewTopic(AnalyticsTopics.API_EVENTS, k.partitions(), k.replicationFactor())
                             .configs(Map.of(TopicConfig.RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(7).toMillis()))),
                     new NewTopic(AnalyticsTopics.TRACE_TRANSACTIONS, 1, k.replicationFactor())
-                            .configs(Map.of(TopicConfig.RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(1).toMillis()))));
+                            .configs(Map.of(TopicConfig.RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(1).toMillis()))),
+                    new NewTopic(AnalyticsTopics.AI_REQUESTS, k.partitions(), k.replicationFactor())
+                            .configs(Map.of(TopicConfig.RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(7).toMillis()))),
+                    new NewTopic(AnalyticsTopics.MCP_TOOL_CALLS, k.partitions(), k.replicationFactor())
+                            .configs(Map.of(TopicConfig.RETENTION_MS_CONFIG, String.valueOf(Duration.ofDays(7).toMillis()))));
             for (var entry : admin.createTopics(topics).values().entrySet()) {
                 try {
                     entry.getValue().get(20, TimeUnit.SECONDS);
@@ -158,7 +167,7 @@ public class AnalyticsIngestor implements SmartLifecycle {
         config.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, "600000");   // backoff while ClickHouse is down
         try (KafkaConsumer<String, String> c = new KafkaConsumer<>(config)) {
             consumer = c;
-            c.subscribe(List.of(AnalyticsTopics.API_EVENTS, AnalyticsTopics.TRACE_TRANSACTIONS));
+            c.subscribe(List.copyOf(TABLES.keySet()));
             Duration backoff = Duration.ofSeconds(1);
             while (running) {
                 ConsumerRecords<String, String> records = c.poll(Duration.ofSeconds(1));
@@ -185,21 +194,23 @@ public class AnalyticsIngestor implements SmartLifecycle {
         }
     }
 
-    /** Writes one polled batch. Package-visible for tests. */
+    /** Writes one polled batch, one insert per table. Package-visible for tests. */
     void write(ConsumerRecords<String, String> records) {
-        List<String> events = new ArrayList<>();
-        List<String> traces = new ArrayList<>();
+        Map<String, List<String>> rowsByTable = new java.util.LinkedHashMap<>();
         for (ConsumerRecord<String, String> record : records) {
+            String table = TABLES.get(record.topic());
+            if (table == null) {
+                continue;
+            }
             String row = AnalyticsTopics.TRACE_TRANSACTIONS.equals(record.topic())
                     ? traceRow(record.value()) : apiEventRow(record.value());
             if (row == null) {
                 count(rejected, 1);
                 continue;
             }
-            (AnalyticsTopics.TRACE_TRANSACTIONS.equals(record.topic()) ? traces : events).add(row);
+            rowsByTable.computeIfAbsent(table, t -> new ArrayList<>()).add(row);
         }
-        insert("api_events", events);
-        insert("trace_transactions", traces);
+        rowsByTable.forEach(this::insert);
     }
 
     private void insert(String table, List<String> rows) {

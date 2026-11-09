@@ -1,0 +1,48 @@
+{{- if .Values.ingress.enabled }}
+{{- $root := . }}
+{{- $routes := list
+      (dict "url" .Values.urls.api "name" "management" "port" .Values.management.port "enabled" .Values.management.enabled)
+      (dict "url" .Values.urls.gateway "name" "gateway" "port" .Values.gateway.port "enabled" .Values.gateway.enabled)
+      (dict "url" .Values.urls.console "name" "console" "port" .Values.console.port "enabled" .Values.console.enabled)
+      (dict "url" .Values.urls.portal "name" "portal" "port" .Values.portal.port "enabled" .Values.portal.enabled) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "portica.fullname" . }}
+  labels:
+    {{- include "portica.labels" (dict "root" . "name" "ingress") | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range $routes }}
+    {{- if .enabled }}
+    - host: {{ (urlParse .url).host | quote }}
+      http:
+        paths:
+          {{- if eq .name "management" }}
+          # the runtime and portal APIs are for services inside the cluster only
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: {{ include "portica.component" (dict "root" $root "name" .name) }}, port: { number: {{ .port }} } } }
+          {{- else if eq .name "portal" }}
+          - path: /api/portal
+            pathType: Prefix
+            backend: { service: { name: {{ include "portica.component" (dict "root" $root "name" .name) }}, port: { number: {{ .port }} } } }
+          {{- else }}
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ include "portica.component" (dict "root" $root "name" .name) }}, port: { number: {{ .port }} } } }
+          {{- end }}
+    {{- end }}
+    {{- end }}
+{{- end }}

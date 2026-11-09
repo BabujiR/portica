@@ -44,6 +44,18 @@ public class TargetServer extends AuditableEntity {
     @Column(name = "enabled", nullable = false)
     private boolean enabled;
 
+    @Column(name = "tls_client_certificate")
+    private String tlsClientCertificate;
+
+    @Column(name = "tls_client_key_encrypted")
+    private String tlsClientKeyEncrypted;
+
+    @Column(name = "tls_trusted_certificates")
+    private String tlsTrustedCertificates;
+
+    @Column(name = "tls_verify_hostname", nullable = false)
+    private boolean tlsVerifyHostname = true;
+
     protected TargetServer() {
         // JPA
     }
@@ -95,5 +107,43 @@ public class TargetServer extends AuditableEntity {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    /**
+     * TLS settings towards this backend: client certificate chain and encrypted key for mutual TLS (both or
+     * neither), CA certificates to trust instead of the JVM defaults, and host name verification.
+     */
+    public void updateTls(String clientCertificate, String clientKeyEncrypted, String trustedCertificates,
+                          boolean verifyHostname) {
+        this.tlsClientCertificate = clientCertificate;
+        this.tlsClientKeyEncrypted = clientKeyEncrypted;
+        this.tlsTrustedCertificates = trustedCertificates;
+        this.tlsVerifyHostname = verifyHostname;
+    }
+
+    /** Whether the gateway needs a dedicated TLS client for this backend. */
+    public boolean hasCustomTls() {
+        return tlsClientCertificate != null || tlsTrustedCertificates != null || !tlsVerifyHostname;
+    }
+
+    public String getTlsClientCertificate() {
+        return tlsClientCertificate;
+    }
+
+    public String getTlsClientKeyEncrypted() {
+        return tlsClientKeyEncrypted;
+    }
+
+    public String getTlsTrustedCertificates() {
+        return tlsTrustedCertificates;
+    }
+
+    public boolean isTlsVerifyHostname() {
+        return tlsVerifyHostname;
+    }
+
+    /** Associated data binding the encrypted client key to this row. */
+    public String keyAssociatedData() {
+        return "target-server:" + environment.getId() + ":" + name;
     }
 }

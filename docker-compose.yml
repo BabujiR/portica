@@ -110,6 +110,10 @@ services:
       PORTICA_KVM_ENCRYPTION_KEY: ${PORTICA_KVM_ENCRYPTION_KEY:-o1r8cXTayN7WvWNLZ8JMcwDzlrd05HPoHb9/reetxkQ=}
       PORTICA_CLICKHOUSE_URL: http://clickhouse:8123
       PORTICA_CLICKHOUSE_PASSWORD: ${PORTICA_CLICKHOUSE_PASSWORD:-portica}
+      # Phase 7: where the gateway forwards AI and MCP calls, and the secret it adds
+      PORTICA_AI_GATEWAY_URL: http://ai-gateway:8082
+      PORTICA_MCP_URL: http://mcp:8083
+      PORTICA_INTERNAL_TOKEN: ${PORTICA_INTERNAL_TOKEN:-portica-internal-dev-token}
     ports:
       - "8080:8080"
 
@@ -148,6 +152,66 @@ services:
     ports:
       - "8084:8084"
 
+  # OpenAI-compatible AI gateway (Phase 7); clients reach it through the gateway at /{org}/{env}/ai/{name}/v1
+  ai-gateway:
+    profiles: ["app"]
+    build:
+      context: ./portica-ai-gateway
+    image: portica/portica-ai-gateway:local
+    depends_on:
+      - management
+      - redis
+      - kafka
+    environment:
+      PORTICA_MANAGEMENT_URL: http://management:8080
+      PORTICA_OIDC_TOKEN_URI: http://keycloak:8080/realms/portica/protocol/openid-connect/token
+      PORTICA_GATEWAY_CLIENT_SECRET: ${PORTICA_GATEWAY_CLIENT_SECRET:-portica-gateway-dev-secret}
+      PORTICA_INTERNAL_TOKEN: ${PORTICA_INTERNAL_TOKEN:-portica-internal-dev-token}
+      PORTICA_REDIS_HOST: redis
+      PORTICA_KAFKA_BOOTSTRAP: kafka:29092
+    ports:
+      - "8082:8082"
+
+  # MCP servers (Phase 7); clients reach them through the gateway at /{org}/{env}/mcp/{name}
+  mcp:
+    profiles: ["app"]
+    build:
+      context: ./portica-mcp
+    image: portica/portica-mcp:local
+    depends_on:
+      - management
+      - gateway
+      - kafka
+    environment:
+      PORTICA_MANAGEMENT_URL: http://management:8080
+      PORTICA_GATEWAY_INTERNAL_URL: http://gateway:8081
+      PORTICA_OIDC_TOKEN_URI: http://keycloak:8080/realms/portica/protocol/openid-connect/token
+      PORTICA_GATEWAY_CLIENT_SECRET: ${PORTICA_GATEWAY_CLIENT_SECRET:-portica-gateway-dev-secret}
+      PORTICA_INTERNAL_TOKEN: ${PORTICA_INTERNAL_TOKEN:-portica-internal-dev-token}
+      PORTICA_KAFKA_BOOTSTRAP: kafka:29092
+    ports:
+      - "8083:8083"
+
+  # Developer portal backend (Phase 8); the portal UI is part of the console at /portal/{org}
+  portal:
+    profiles: ["app"]
+    build:
+      context: ./portica-portal
+    image: portica/portica-portal:local
+    depends_on:
+      - management
+      - gateway
+    environment:
+      PORTICA_MANAGEMENT_URL: http://management:8080
+      PORTICA_GATEWAY_INTERNAL_URL: http://gateway:8081
+      PORTICA_OIDC_ISSUER: http://localhost:8180/realms/portica
+      PORTICA_OIDC_JWKS: http://keycloak:8080/realms/portica/protocol/openid-connect/certs
+      PORTICA_OIDC_TOKEN_URI: http://keycloak:8080/realms/portica/protocol/openid-connect/token
+      PORTICA_PORTAL_CLIENT_SECRET: ${PORTICA_PORTAL_CLIENT_SECRET:-portica-portal-dev-secret}
+      PORTICA_PORTAL_ORIGINS: http://localhost:5173
+    ports:
+      - "8085:8085"
+
   # Web console (Phase 5). For development, run it with `npm run dev` in portica-console instead;
   # this container serves the production build: docker compose --profile console up -d --build console
   console:
@@ -159,6 +223,7 @@ services:
       # URLs as the browser sees them (not container names).
       PORTICA_API_BASE_URL: http://localhost:8080
       PORTICA_GATEWAY_URL: http://localhost:8081
+      PORTICA_PORTAL_API_URL: http://localhost:8085
       PORTICA_OIDC_AUTHORITY: http://localhost:8180/realms/portica
       PORTICA_OIDC_CLIENT_ID: portica-console
     ports:

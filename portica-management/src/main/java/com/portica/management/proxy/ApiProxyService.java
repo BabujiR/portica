@@ -19,6 +19,7 @@ import com.portica.management.proxy.ApiProxyDtos.TargetRequest;
 import com.portica.management.proxy.ApiProxyDtos.UpdateApiProxyRequest;
 import com.portica.management.proxy.openapi.OpenApiDocument;
 import com.portica.management.proxy.openapi.OpenApiParser;
+import com.portica.management.shared.GatewayNames;
 import com.portica.management.shared.SearchTerms;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -48,10 +49,12 @@ public class ApiProxyService {
     private final OrganizationFinder organizations;
     private final OpenApiParser openApiParser;
     private final AuditService audit;
+    private final GatewayNames gatewayNames;
 
     public ApiProxyService(ApiProxyRepository proxies, ApiProxyRevisionRepository revisions,
                            DeploymentRepository deployments, OrganizationFinder organizations,
-                           OpenApiParser openApiParser, AuditService audit) {
+                           OpenApiParser openApiParser, AuditService audit, GatewayNames gatewayNames) {
+        this.gatewayNames = gatewayNames;
         this.proxies = proxies;
         this.revisions = revisions;
         this.deployments = deployments;
@@ -79,6 +82,7 @@ public class ApiProxyService {
         if (proxies.existsByOrganization_IdAndName(organization.getId(), request.name())) {
             throw ResourceConflictException.alreadyExists(RESOURCE_TYPE, request.name());
         }
+        gatewayNames.requireFreeForApiProxy(organization.getId(), request.name());
         ApiProxy proxy = proxies.save(new ApiProxy(organization, request.name(), request.displayName(),
                 request.description()));
         ApiProxyRevision revision = addRevision(proxy, request.revision());
@@ -177,6 +181,9 @@ public class ApiProxyService {
                 truncate(revisionNote, 1024), request.spec(), null, null);
 
         Optional<ApiProxy> existing = proxies.findByOrganization_IdAndName(organization.getId(), request.name());
+        if (existing.isEmpty()) {
+            gatewayNames.requireFreeForApiProxy(organization.getId(), request.name());
+        }
         ApiProxy proxy = existing.orElseGet(() -> proxies.save(new ApiProxy(organization, request.name(),
                 isBlank(request.displayName()) ? truncate(document.title(), 128) : request.displayName(),
                 truncate(document.description(), 1024))));
@@ -196,7 +203,7 @@ public class ApiProxyService {
 
     private ApiProxyRevision addRevision(ApiProxy proxy, CreateRevisionRequest request) {
         if (PorticaPaths.isReserved(request.basePath())) {
-            throw new InvalidRequestException("Base path '%s' is reserved for the gateway's OAuth endpoints"
+            throw new InvalidRequestException("Base path '%s' is reserved for Portica's built-in gateway endpoints (/oauth2, /ai, /mcp)"
                     .formatted(request.basePath()));
         }
         TargetSpec target = TargetSpec.of(request.target().url(), request.target().server(), request.target().path());

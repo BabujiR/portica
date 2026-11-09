@@ -80,10 +80,20 @@ portica:
   security:
     platform-admin-role: portica-platform-admin
     runtime-role: portica-runtime
+    portal-role: portica-portal          # the developer portal service account (Phase 8)
     cors-allowed-origins:
       - http://localhost:5173
   organizations:
     default-environments: [dev, test, prod]
+  services:
+    # Phase 7: where things are, for OAuth redirects and the generated AI / MCP gateway proxies
+    public-url: ${PORTICA_PUBLIC_URL:http://localhost:8080}             # this API, as browsers reach it
+    console-url: ${PORTICA_CONSOLE_URL:http://localhost:5173}
+    gateway-url: ${PORTICA_GATEWAY_PUBLIC_URL:http://localhost:8081}    # advertised in MCP OAuth metadata
+    ai-gateway-url: ${PORTICA_AI_GATEWAY_URL:http://localhost:8082}     # reached by the gateway
+    mcp-url: ${PORTICA_MCP_URL:http://localhost:8083}                   # reached by the gateway
+    # shared secret the gateway adds when forwarding to portica-ai-gateway and portica-mcp; same value there
+    internal-token: ${PORTICA_INTERNAL_TOKEN:portica-internal-dev-token}
   clickhouse:
     # analytics and trace data written by portica-analytics; read by the analytics and trace APIs
     url: ${PORTICA_CLICKHOUSE_URL:http://localhost:8123}
@@ -92,10 +102,27 @@ portica:
     password: ${PORTICA_CLICKHOUSE_PASSWORD:portica}
     timeout: 15s
   kvm:
-    # AES-256 key (base64 of 32 random bytes: openssl rand -base64 32) for encrypted key value maps.
-    # Without it, encrypted maps can't be created. Keep it secret and stable: changing it makes
-    # existing encrypted values unreadable.
+    # Phase 4 single key (base64 of 32 random bytes). Still accepted: without portica.secrets keys it is the
+    # local key-encryption key "default", and it always decrypts values written before Phase 8.
     encryption-key: ${PORTICA_KVM_ENCRYPTION_KEY:}
+  secrets:
+    # Envelope encryption of every stored secret: a random data key per value, wrapped by a key-encryption
+    # key (KEK) that lives here (local) or in HashiCorp Vault's Transit engine (vault).
+    provider: ${PORTICA_SECRETS_PROVIDER:local}
+    local:
+      # Rotate: add a key, make it active, restart; the rotation job re-wraps data keys.
+      active-key: ${PORTICA_SECRETS_ACTIVE_KEY:}
+      keys: {}      # e.g. k1: <base64 32 bytes>, k2: <base64 32 bytes>   (env: PORTICA_SECRETS_LOCAL_KEYS_K1=...)
+    vault:
+      address: ${PORTICA_VAULT_ADDR:}
+      token: ${PORTICA_VAULT_TOKEN:}
+      token-file: ${PORTICA_VAULT_TOKEN_FILE:}        # e.g. written by the Vault agent
+      namespace: ${PORTICA_VAULT_NAMESPACE:}
+      transit-mount: transit
+      key-name: portica
+    rotation:
+      enabled: true
+      interval: PT6H    # how often data keys not under the current KEK are re-wrapped
 
 logging:
   pattern:

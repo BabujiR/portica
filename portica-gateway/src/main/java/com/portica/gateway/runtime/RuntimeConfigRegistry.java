@@ -39,6 +39,7 @@ public class RuntimeConfigRegistry {
     private final Map<String, CompiledEnvironment> compiledEnvironments = new HashMap<>();
     private volatile List<RouteDefinition> routes = List.of();
     private volatile Map<String, CompiledProxy> compiledProxies = Map.of();
+    private volatile Map<String, RuntimeModel.RuntimeTargetTls> targetTls = Map.of();
 
     @Autowired
     public RuntimeConfigRegistry(ApplicationEventPublisher events, ProxyBundleCompiler compiler,
@@ -104,6 +105,11 @@ public class RuntimeConfigRegistry {
         return compiledProxies.get(bundleKey);
     }
 
+    /** TLS material for backends, by {@link RuntimeModel.RuntimeTargetTls#fingerprint()} (route metadata). */
+    public RuntimeModel.RuntimeTargetTls targetTls(String fingerprint) {
+        return targetTls.get(fingerprint);
+    }
+
     public List<RouteDefinition> routeDefinitions() {
         return routes;
     }
@@ -117,6 +123,10 @@ public class RuntimeConfigRegistry {
         compiledEnvironments.values().forEach(env -> all.putAll(env.proxies()));
         // Publish compiled bundles before routes, so a new route never misses its bundle.
         compiledProxies = Map.copyOf(all);
+        Map<String, RuntimeModel.RuntimeTargetTls> tls = new HashMap<>();
+        environments.values().forEach(env -> env.proxies().stream().map(RuntimeModel.RuntimeProxy::targetTls)
+                .filter(java.util.Objects::nonNull).forEach(t -> tls.put(t.fingerprint(), t)));
+        targetTls = Map.copyOf(tls);
         routes = List.copyOf(RouteDefinitionFactory.build(environments.values(), all::containsKey));
         events.publishEvent(new RefreshRoutesEvent(this));
     }

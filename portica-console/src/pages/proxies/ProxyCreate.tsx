@@ -215,7 +215,7 @@ export function ProxyCreate() {
                   notFoundContent="No target servers in this environment" />
               </Form.Item>
             ) : (
-              <Form.Item name="url" label="Target URL" rules={[{ required: true }, { type: 'url', message: 'http(s)://host[:port][/path]' }]}>
+              <Form.Item name="url" label="Target URL" rules={[{ required: true }, { pattern: /^https?:\/\/[^\s/:?#]+(:\d{1,5})?([/?#]\S*)?$/, message: 'http(s)://host[:port][/path]' }]}>
                 <Input placeholder="https://petstore.example.com/v2" />
               </Form.Item>
             )}

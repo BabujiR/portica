@@ -5,17 +5,24 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * SpikeArrest: smooths traffic to {@code rate} per second ({@code 100ps}) or per minute ({@code 600pm}).
- * Enforced per gateway instance with a token bucket; {@code burst} is how many requests may arrive
- * back-to-back (default 1, i.e. strict smoothing like Apigee).
+ * SpikeArrest: smooths traffic to {@code rate} per second ({@code 100ps}) or per minute ({@code 600pm});
+ * {@code burst} is how many requests may arrive back-to-back (default 1, i.e. strict smoothing like Apigee).
+ * With the Redis policy store the limit is shared by every gateway instance (GCRA in Redis); with the
+ * in-memory store it applies per instance. {@code failOpen} (default true) lets calls through when Redis
+ * can't be reached.
  */
-public record SpikeArrestConfig(String rate, String identifier, Integer burst) implements PolicyConfig {
+public record SpikeArrestConfig(String rate, String identifier, Integer burst, Boolean failOpen) implements PolicyConfig {
 
     private static final Pattern RATE = Pattern.compile("^(\\d{1,9})(ps|pm)$");
 
     public SpikeArrestConfig {
         identifier = identifier == null ? "" : identifier;
         burst = burst == null ? 1 : burst;
+        failOpen = failOpen == null || failOpen;
+    }
+
+    public SpikeArrestConfig(String rate, String identifier, Integer burst) {
+        this(rate, identifier, burst, null);
     }
 
     /** Requests per second, or -1 when {@code rate} is invalid. */

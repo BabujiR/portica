@@ -38,4 +38,10 @@ public class AuditService {
         events.save(new AuditEvent(organizationId, actor.subject(), actor.email(), action, resourceType,
                 resourceName, json, MDC.get(RequestIdFilter.MDC_KEY)));
     }
+
+    /** A platform-wide event (no organization), in its own transaction when there is none. */
+    @Transactional
+    public void recordPlatform(String action, String resourceName, Map<String, ?> details) {
+        record(null, action, "Platform", resourceName, details);
+    }
 }

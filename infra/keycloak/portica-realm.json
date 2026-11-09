@@ -3,7 +3,7 @@
   "displayName": "Portica",
   "enabled": true,
   "sslRequired": "external",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
@@ -19,6 +19,10 @@
       {
         "name": "portica-runtime",
         "description": "Gateways: read runtime configuration (deployed proxies) from the management plane."
+      },
+      {
+        "name": "portica-portal",
+        "description": "The developer portal backend: reads the public catalog and manages apps on behalf of signed-in developers."
       }
     ]
   },
@@ -107,6 +111,32 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "portica-portal",
+      "name": "Portica Developer Portal",
+      "description": "Confidential client of portica-portal: calls the management API for developers (client credentials).",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "portica-portal-dev-secret",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "portica-management-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "portica-management",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "users": [
@@ -164,6 +194,29 @@
       "serviceAccountClientId": "portica-gateway",
       "realmRoles": [
         "portica-runtime"
+      ]
+    },
+    {
+      "username": "service-account-portica-portal",
+      "enabled": true,
+      "serviceAccountClientId": "portica-portal",
+      "realmRoles": [
+        "portica-portal"
+      ]
+    },
+    {
+      "username": "dev",
+      "email": "dev@portica.local",
+      "emailVerified": true,
+      "firstName": "Devon",
+      "lastName": "Developer",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev",
+          "temporary": false
+        }
       ]
     }
   ]

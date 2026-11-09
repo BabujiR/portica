@@ -5,6 +5,31 @@ server:
 spring:
   application:
     name: portica-mcp
+  threads:
+    virtual:
+      enabled: true   # tool calls block on HTTP; virtual threads keep that cheap
+
+portica:
+  mcp:
+    management-url: ${PORTICA_MANAGEMENT_URL:http://localhost:8080}
+    # OpenAPI tools are called through the API gateway, so the proxy's policies and analytics apply
+    gateway-url: ${PORTICA_GATEWAY_INTERNAL_URL:http://localhost:8081}
+    environments: ${PORTICA_MCP_ENVIRONMENTS:*}
+    # Same value as portica.services.internal-token on the management API
+    internal-token: ${PORTICA_INTERNAL_TOKEN:portica-internal-dev-token}
+    tool-list-cache: 60s
+    sync:
+      enabled: true
+      poll-interval: 5s
+      timeout: 10s
+    auth:
+      token-uri: ${PORTICA_OIDC_TOKEN_URI:http://localhost:8180/realms/portica/protocol/openid-connect/token}
+      client-id: ${PORTICA_GATEWAY_CLIENT_ID:portica-gateway}
+      client-secret: ${PORTICA_GATEWAY_CLIENT_SECRET:portica-gateway-dev-secret}
+    analytics:
+      enabled: ${PORTICA_ANALYTICS_ENABLED:true}
+      bootstrap-servers: ${PORTICA_KAFKA_BOOTSTRAP:localhost:9092}
+      queue-capacity: 10000
 
 management:
   endpoints:

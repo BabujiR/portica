@@ -1,0 +1,152 @@
+{{- $root := . }}
+{{- range $name, $key := include "portica.components" . | fromYaml }}
+{{- $c := index $root.Values $key }}
+{{- if $c.enabled }}
+{{- $ctx := dict "root" $root "name" $name }}
+{{- $java := ne $name "console" }}
+{{- $tlsOn := false }}
+{{- $autoscaled := false }}
+{{- if eq $name "gateway" }}
+{{- $tlsOn = $c.tls.enabled }}
+{{- $autoscaled = $c.autoscaling.enabled }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "portica.component" $ctx }}
+  labels:
+    {{- include "portica.labels" $ctx | nindent 4 }}
+spec:
+  {{- if not $autoscaled }}
+  replicas: {{ $c.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels:
+      {{- include "portica.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "portica.selector" $ctx | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $root.Template.BasePath "/secret.yaml") $root | sha256sum }}
+        {{- if $java }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: {{ $c.port | quote }}
+        {{- end }}
+    spec:
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml (default $root.Values.podSecurityContext $c.podSecurityContext) | nindent 8 }}
+      terminationGracePeriodSeconds: 40
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "portica.selector" $ctx | nindent 14 }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "portica.image" $ctx }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml (default $root.Values.securityContext $c.securityContext) | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ $c.port }}
+            {{- if $tlsOn }}
+            - name: https
+              containerPort: {{ $c.tls.port }}
+            {{- end }}
+          env:
+            {{- include "portica.env" (dict "root" $root "name" $name "values" $c) | nindent 12 }}
+            {{- if $java }}
+            - { name: JAVA_TOOL_OPTIONS, value: "-XX:MaxRAMPercentage=75 -Djava.io.tmpdir=/tmp" }
+            {{- end }}
+          {{- if $java }}
+          {{- /* with TLS the gateway keeps a plain internal listener on the http port, used by probes */}}
+          {{- $probePort := $c.port }}
+          {{- $scheme := "HTTP" }}
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: {{ $probePort }}, scheme: {{ $scheme }} }
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: {{ $probePort }}, scheme: {{ $scheme }} }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: {{ $probePort }}, scheme: {{ $scheme }} }
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              exec: { command: ["sh", "-c", "sleep 10"] }   # let endpoints drain before shutdown
+          {{- else }}
+          readinessProbe:
+            httpGet: { path: /, port: http }
+          {{- end }}
+          resources:
+            {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            {{- if $tlsOn }}
+            - { name: tls, mountPath: /etc/portica/tls, readOnly: true }
+            - { name: client-ca, mountPath: /etc/portica/client-ca, readOnly: true }
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if $tlsOn }}
+        - name: tls
+          secret:
+            secretName: {{ $c.tls.secretName }}
+            items: [{ key: tls.crt, path: tls.crt }, { key: tls.key, path: tls.key }]
+        - name: client-ca
+          secret:
+            secretName: {{ default $c.tls.secretName $c.tls.clientCaSecretName }}
+            items: [{ key: {{ ternary "client-ca.crt" "ca.crt" (not (empty $c.tls.clientCaSecretName)) }}, path: client-ca.crt }]
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "portica.component" $ctx }}
+  labels:
+    {{- include "portica.labels" $ctx | nindent 4 }}
+spec:
+  type: {{ if eq $name "gateway" }}{{ $c.service.type }}{{ else }}ClusterIP{{ end }}
+  selector:
+    {{- include "portica.selector" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $c.port }}
+      targetPort: http
+    {{- if $tlsOn }}
+    - name: https
+      port: {{ $c.tls.port }}
+      targetPort: https
+    {{- end }}
+{{- if and $root.Values.podDisruptionBudget.enabled (or (gt (int $c.replicas) 1) $autoscaled) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "portica.component" $ctx }}
+  labels:
+    {{- include "portica.labels" $ctx | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "portica.selector" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- end }}

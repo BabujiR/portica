@@ -46,6 +46,7 @@ public class AnalyticsService {
               AND event_time < fromUnixTimestamp64Milli({to:Int64}, 'UTC')
               AND ({env:String} = '' OR environment = {env:String})
               AND ({api:String} = '' OR api_proxy = {api:String})
+              AND ({developer:String} = '' OR developer = {developer:String})
             """;
 
     private final AnalyticsStore store;
@@ -55,6 +56,11 @@ public class AnalyticsService {
     }
 
     public Summary summary(String org, Instant from, Instant to, String env, String api) {
+        return summary(org, from, to, env, api, null);
+    }
+
+    /** {@code developer}: only this developer's traffic (email), e.g. for the developer portal. */
+    public Summary summary(String org, Instant from, Instant to, String env, String api, String developer) {
         Window w = window(from, to, env, api);
         List<Map<String, Object>> rows = store.query("""
                 SELECT count() AS requests,
@@ -67,7 +73,7 @@ public class AnalyticsService {
                        ifNotFinite(avgIf(target_ms, target_called = 1), 0) AS avgTargetMs,
                        countIf(cache_hit = 1) AS cacheHits
                 FROM api_events
-                WHERE\s""" + FILTER, params(org, w));
+                WHERE\s""" + FILTER, params(org, w, developer));
         Map<String, Object> r = rows.isEmpty() ? Map.of() : rows.getFirst();
         long requests = asLong(r.get("requests"));
         long e4 = asLong(r.get("errors4xx"));
@@ -79,9 +85,13 @@ public class AnalyticsService {
     }
 
     public Timeseries timeseries(String org, Instant from, Instant to, String env, String api) {
+        return timeseries(org, from, to, env, api, null);
+    }
+
+    public Timeseries timeseries(String org, Instant from, Instant to, String env, String api, String developer) {
         Window w = window(from, to, env, api);
         long bucketMs = bucketSeconds(Duration.between(w.from(), w.to())) * 1000;
-        Map<String, Object> params = params(org, w);
+        Map<String, Object> params = params(org, w, developer);
         params.put("bucket", bucketMs);
         List<Map<String, Object>> rows = store.query("""
                 SELECT intDiv(toUnixTimestamp64Milli(event_time), {bucket:Int64}) * {bucket:Int64} AS t,
@@ -107,12 +117,17 @@ public class AnalyticsService {
     }
 
     public Top top(String org, String dimension, Instant from, Instant to, String env, String api, int limit) {
+        return top(org, dimension, from, to, env, api, limit, null);
+    }
+
+    public Top top(String org, String dimension, Instant from, Instant to, String env, String api, int limit,
+                   String developer) {
         String column = DIMENSIONS.get(dimension);
         if (column == null) {
             throw new InvalidRequestException("dimension must be one of " + DIMENSIONS.keySet().stream().sorted().toList());
         }
         Window w = window(from, to, env, api);
-        Map<String, Object> params = params(org, w);
+        Map<String, Object> params = params(org, w, developer);
         List<Map<String, Object>> rows = store.query("""
                 SELECT %s AS name,
                        count() AS requests,
@@ -189,7 +204,12 @@ public class AnalyticsService {
     }
 
     private static Map<String, Object> params(String org, Window w) {
+        return params(org, w, null);
+    }
+
+    private static Map<String, Object> params(String org, Window w, String developer) {
         Map<String, Object> p = new LinkedHashMap<>();
+        p.put("developer", developer == null ? "" : developer);
         p.put("org", org);
         p.put("from", w.from().toEpochMilli());
         p.put("to", w.to().toEpochMilli());

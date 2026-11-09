@@ -54,6 +54,8 @@ URIs and web origins, and to the management API's `portica.security.cors-allowed
 | Configure | Environments (with what's deployed), target servers, key value maps (environment and organization scope, encrypted values never shown) |
 | Analytics | Requests, error rate and latency tiles; traffic and latency over time, top proxies, top apps and status codes (ECharts); recent calls; time range, environment and proxy filters; live refresh |
 | Trace | Start a session per environment (optional header or client IP filter), watch calls arrive over Server-Sent Events, inspect each call: policy steps (ran, skipped, fault), target call, headers and flow variables (secrets masked) |
+| AI Gateway | LLM providers (OpenAI or Anthropic API, encrypted key, models with list prices); AI proxies (routes with fallback order, default route, token quota per app, PII redact/block, limits) with copy-paste curl and OpenAI SDK snippets; usage and cost by model and app |
+| MCP Servers | Servers from an API proxy's OpenAPI spec or a remote MCP server (bearer token or OAuth 2.1 client credentials / sign-in); tool list per environment; endpoint and client configuration; upstream OAuth status, sign-in and refresh; tool call analytics |
 | Administer | Members (invite, roles, remove) and the built-in roles with their permissions; audit log with search, resource type and date filters |
 
 Layout of `src/`: `auth/` (OIDC), `api/` (typed client for every endpoint, problem-detail errors),

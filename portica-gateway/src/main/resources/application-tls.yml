@@ -1,0 +1,30 @@
+# TLS on the gateway: activate with SPRING_PROFILES_ACTIVE=tls (the Helm chart does this when tls.enabled).
+# The certificate and key are PEM files (e.g. a Kubernetes TLS secret mounted at /etc/portica/tls);
+# client-ca.crt lists the CAs whose client certificates are accepted for mutual TLS.
+server:
+  port: ${PORTICA_GATEWAY_TLS_PORT:8443}
+  http2:
+    enabled: true
+  ssl:
+    bundle: gateway
+    # want: ask for a client certificate but accept clients without one; VerifyClientCertificate
+    # then decides per proxy. Use "need" to require mutual TLS for every request.
+    client-auth: ${PORTICA_TLS_CLIENT_AUTH:want}
+    enabled-protocols: [TLSv1.3, TLSv1.2]
+
+portica:
+  gateway:
+    # plain HTTP for callers inside the cluster (MCP service, portal try-it, health probes)
+    internal-http-port: ${PORTICA_GATEWAY_INTERNAL_HTTP_PORT:8081}
+
+spring:
+  ssl:
+    bundle:
+      pem:
+        gateway:
+          reload-on-update: true          # certificate rotation (cert-manager) without a restart
+          keystore:
+            certificate: ${PORTICA_TLS_CERTIFICATE:file:/etc/portica/tls/tls.crt}
+            private-key: ${PORTICA_TLS_PRIVATE_KEY:file:/etc/portica/tls/tls.key}
+          truststore:
+            certificate: ${PORTICA_TLS_CLIENT_CA:file:/etc/portica/tls/client-ca.crt}

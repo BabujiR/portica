@@ -3,6 +3,7 @@ package com.portica.gateway.oauth;
 import com.portica.common.security.Hashing;
 import com.portica.gateway.policy.credentials.AppCredential;
 import com.portica.gateway.policy.credentials.CredentialRegistry;
+import com.portica.gateway.policy.store.RateLimiterStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,18 +49,22 @@ public class TokenEndpoint {
     private final CredentialRegistry credentials;
     private final AccessTokenStore tokens;
     private final OAuthProperties properties;
+    private final RateLimiterStore limiter;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
 
     @Autowired
-    public TokenEndpoint(CredentialRegistry credentials, AccessTokenStore tokens, OAuthProperties properties) {
-        this(credentials, tokens, properties, Clock.systemUTC());
+    public TokenEndpoint(CredentialRegistry credentials, AccessTokenStore tokens, OAuthProperties properties,
+                         RateLimiterStore limiter) {
+        this(credentials, tokens, properties, limiter, Clock.systemUTC());
     }
 
-    TokenEndpoint(CredentialRegistry credentials, AccessTokenStore tokens, OAuthProperties properties, Clock clock) {
+    TokenEndpoint(CredentialRegistry credentials, AccessTokenStore tokens, OAuthProperties properties,
+                  RateLimiterStore limiter, Clock clock) {
         this.credentials = credentials;
         this.tokens = tokens;
         this.properties = properties;
+        this.limiter = limiter;
         this.clock = clock;
     }
 
@@ -84,42 +89,46 @@ public class TokenEndpoint {
             if (!CLIENT_CREDENTIALS.equals(grantType)) {
                 return error(HttpStatus.BAD_REQUEST, "unsupported_grant_type", "Only client_credentials is supported", false);
             }
-            ClientAuthentication client = authenticate(request, form, org, env);
-            if (client.error() != null) {
-                return client.error().response();
-            }
-            AppCredential app = client.app();
-            if (app.products().isEmpty()) {
-                return error(HttpStatus.BAD_REQUEST, "unauthorized_client",
-                        "The app holds no approved API product in this environment", false);
-            }
-            Set<String> allowed = app.scopes();
-            Set<String> requested = scopes(form.getFirst("scope"));
-            if (!allowed.containsAll(requested)) {
-                return error(HttpStatus.BAD_REQUEST, "invalid_scope", "A requested scope isn't granted to the app", false);
-            }
-            List<String> granted = new ArrayList<>(requested.isEmpty() ? allowed : requested);
-
-            String token = newToken();
-            Instant now = clock.instant();
-            Duration ttl = properties.tokenTtl();
-            AccessTokenRecord record = new AccessTokenRecord(org, env, app.credentialId(), Hashing.sha256Hex(app.clientId()),
-                    app.clientId(), granted, now, now.plus(ttl));
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("access_token", token);
-            body.put("token_type", "Bearer");
-            body.put("expires_in", ttl.toSeconds());
-            if (!granted.isEmpty()) {
-                body.put("scope", String.join(" ", granted));
-            }
-            return tokens.save(Hashing.sha256Hex(token), record, ttl)
-                    .then(noStore(ServerResponse.ok()).contentType(MediaType.APPLICATION_JSON).bodyValue(body))
-                    .onErrorResume(e -> {
-                        log.error("Could not store an access token for app {}: {}", app.appName(), e.toString());
-                        return error(HttpStatus.SERVICE_UNAVAILABLE, "temporarily_unavailable",
-                                "Tokens can't be issued right now", false);
-                    });
+            return throttled(request, form, org, env, () -> issue(request, form, org, env));
         });
+    }
+
+    private Mono<ServerResponse> issue(ServerRequest request, MultiValueMap<String, String> form, String org, String env) {
+        ClientAuthentication client = authenticate(request, form, org, env);
+        if (client.error() != null) {
+            return client.error().response();
+        }
+        AppCredential app = client.app();
+        if (app.products().isEmpty()) {
+            return error(HttpStatus.BAD_REQUEST, "unauthorized_client",
+                    "The app holds no approved API product in this environment", false);
+        }
+        Set<String> allowed = app.scopes();
+        Set<String> requested = scopes(form.getFirst("scope"));
+        if (!allowed.containsAll(requested)) {
+            return error(HttpStatus.BAD_REQUEST, "invalid_scope", "A requested scope isn't granted to the app", false);
+        }
+        List<String> granted = new ArrayList<>(requested.isEmpty() ? allowed : requested);
+
+        String token = newToken();
+        Instant now = clock.instant();
+        Duration ttl = properties.tokenTtl();
+        AccessTokenRecord record = new AccessTokenRecord(org, env, app.credentialId(), Hashing.sha256Hex(app.clientId()),
+                app.clientId(), granted, now, now.plus(ttl));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("access_token", token);
+        body.put("token_type", "Bearer");
+        body.put("expires_in", ttl.toSeconds());
+        if (!granted.isEmpty()) {
+            body.put("scope", String.join(" ", granted));
+        }
+        return tokens.save(Hashing.sha256Hex(token), record, ttl)
+                .then(noStore(ServerResponse.ok()).contentType(MediaType.APPLICATION_JSON).bodyValue(body))
+                .onErrorResume(e -> {
+                    log.error("Could not store an access token for app {}: {}", app.appName(), e.toString());
+                    return error(HttpStatus.SERVICE_UNAVAILABLE, "temporarily_unavailable",
+                            "Tokens can't be issued right now", false);
+                });
     }
 
     /** RFC 7009: always 200 for a valid client, whether or not the token existed. */
@@ -132,7 +141,7 @@ public class TokenEndpoint {
         if (!isForm(request)) {
             return error(HttpStatus.BAD_REQUEST, "invalid_request", "Use application/x-www-form-urlencoded", false);
         }
-        return request.formData().flatMap(form -> {
+        return request.formData().flatMap(form -> throttled(request, form, org, env, () -> {
             ClientAuthentication client = authenticate(request, form, org, env);
             if (client.error() != null) {
                 return client.error().response();
@@ -147,7 +156,58 @@ public class TokenEndpoint {
                     .filter(t -> t.keyHash().equals(clientKeyHash)) // a client may only revoke its own tokens
                     .flatMap(t -> tokens.delete(hash))
                     .then(noStore(ServerResponse.ok()).build());
-        });
+        }));
+    }
+
+    // ----------------------------------------------------------------- attempt limits
+
+    /**
+     * Client authentication attempts are limited per client id (and optionally per IP address) across all
+     * gateway instances, so a client's secret can't be guessed at speed. When the limiter's store fails,
+     * requests go through: availability of token issuance wins over the throttle.
+     */
+    private Mono<ServerResponse> throttled(ServerRequest request, MultiValueMap<String, String> form, String org,
+                                           String env, java.util.function.Supplier<Mono<ServerResponse>> next) {
+        String clientId = clientIdOf(request, form);
+        Mono<RateLimiterStore.Decision> byClient = properties.clientAttemptsPerMinute() == 0 || clientId == null
+                ? Mono.just(ALLOWED)
+                : limiter.acquire("oauth-client:" + org + "/" + env + ":" + Hashing.sha256Hex(clientId),
+                properties.clientAttemptsPerMinute() / 60.0, properties.clientAttemptsPerMinute());
+        String ip = request.remoteAddress().map(a -> a.getAddress() == null ? a.getHostString()
+                : a.getAddress().getHostAddress()).orElse(null);
+        Mono<RateLimiterStore.Decision> byIp = properties.ipAttemptsPerMinute() == 0 || ip == null
+                ? Mono.just(ALLOWED)
+                : limiter.acquire("oauth-ip:" + ip, properties.ipAttemptsPerMinute() / 60.0, properties.ipAttemptsPerMinute());
+        return byClient.zipWith(byIp)
+                .onErrorResume(e -> {
+                    log.warn("OAuth attempt limiter unavailable, not limiting: {}", e.toString());
+                    return Mono.just(reactor.util.function.Tuples.of(ALLOWED, ALLOWED));
+                })
+                .flatMap(d -> {
+                    RateLimiterStore.Decision refused = !d.getT1().allowed() ? d.getT1() : !d.getT2().allowed() ? d.getT2() : null;
+                    if (refused == null) {
+                        return next.get();
+                    }
+                    long seconds = Math.max(1, (refused.retryAfterMillis() + 999) / 1000);
+                    return noStore(ServerResponse.status(HttpStatus.TOO_MANY_REQUESTS))
+                            .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", "slow_down",
+                                    "error_description", "Too many attempts; retry in " + seconds + " s"));
+                });
+    }
+
+    private static final RateLimiterStore.Decision ALLOWED = new RateLimiterStore.Decision(true, 0);
+
+    /** The client id the request claims, from Basic credentials or the form; null when absent. */
+    private static String clientIdOf(ServerRequest request, MultiValueMap<String, String> form) {
+        String header = request.headers().firstHeader(HttpHeaders.AUTHORIZATION);
+        if (header != null && header.regionMatches(true, 0, "Basic ", 0, 6)) {
+            String[] pair = decodeBasic(header.substring(6).strip());
+            return pair == null ? null : pair[0];
+        }
+        String id = form.getFirst("client_id");
+        return id == null || id.isBlank() ? null : id;
     }
 
     // ----------------------------------------------------------------- client authentication

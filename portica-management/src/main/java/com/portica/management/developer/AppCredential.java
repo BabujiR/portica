@@ -53,6 +53,10 @@ public class AppCredential extends AuditableEntity {
     @OrderBy("createdAt")
     private List<AppCredentialProduct> products = new ArrayList<>();
 
+    @OneToMany(mappedBy = "credential", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("createdAt")
+    private List<AppCertificate> certificates = new ArrayList<>();
+
     protected AppCredential() {
         // JPA
     }
@@ -122,5 +126,21 @@ public class AppCredential extends AuditableEntity {
 
     public List<AppCredentialProduct> getProducts() {
         return List.copyOf(products);
+    }
+
+    public List<AppCertificate> getCertificates() {
+        return certificates;
+    }
+
+    AppCertificate addCertificate(String fingerprint, String subject, String issuer, String serialNumber,
+                                  Instant notBefore, Instant notAfter, String pem) {
+        AppCertificate certificate = new AppCertificate(this, fingerprint, subject, issuer, serialNumber, notBefore,
+                notAfter, pem);
+        certificates.add(certificate);
+        return certificate;
+    }
+
+    boolean removeCertificate(String fingerprint) {
+        return certificates.removeIf(c -> c.getFingerprint().equals(fingerprint));
     }
 }

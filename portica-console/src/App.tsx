@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useState, type ReactElement } from 'react';
 import { Skeleton } from 'antd';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createBrowserRouter, Navigate, RouterProvider, type RouteObject } from 'react-router-dom';
@@ -23,6 +23,17 @@ import { TargetServers } from './pages/targetservers/TargetServers';
 
 // ECharts is large: load the analytics page (and its charts) only when it's opened
 const Analytics = lazy(() => import('./pages/analytics/Analytics').then((m) => ({ default: m.Analytics })));
+const AiGateway = lazy(() => import('./pages/ai/AiGateway').then((m) => ({ default: m.AiGateway })));
+const McpServers = lazy(() => import('./pages/mcp/McpServers').then((m) => ({ default: m.McpServers })));
+const McpServerDetail = lazy(() => import('./pages/mcp/McpServerDetail').then((m) => ({ default: m.McpServerDetail })));
+// The developer portal is a separate audience: its pages load only when someone opens /portal
+const PortalShell = lazy(() => import('./pages/portal/PortalShell').then((m) => ({ default: m.PortalShell })));
+const PortalCatalog = lazy(() => import('./pages/portal/PortalCatalog').then((m) => ({ default: m.PortalCatalog })));
+const PortalApiDocs = lazy(() => import('./pages/portal/PortalApiDocs').then((m) => ({ default: m.PortalApiDocs })));
+const PortalMcpServer = lazy(() => import('./pages/portal/PortalMcpServer').then((m) => ({ default: m.PortalMcpServer })));
+const PortalApps = lazy(() => import('./pages/portal/PortalApps').then((m) => ({ default: m.PortalApps })));
+const PortalUsage = lazy(() => import('./pages/portal/PortalUsage').then((m) => ({ default: m.PortalUsage })));
+const lazyPage = (page: ReactElement) => <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}>{page}</Suspense>;
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +57,9 @@ const routes: RouteObject[] = [
       { path: 'dashboard', element: <Dashboard /> },
       { path: 'analytics', element: <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} />}><Analytics /></Suspense> },
       { path: 'audit', element: <AuditLog /> },
+      { path: 'ai', element: lazyPage(<AiGateway />) },
+      { path: 'mcp', element: lazyPage(<McpServers />) },
+      { path: 'mcp/:name', element: lazyPage(<McpServerDetail />) },
       { path: 'proxies', element: <ProxyList /> },
       { path: 'proxies/new', element: <ProxyCreate /> },
       { path: 'proxies/:api', element: <ProxyDetail /> },
@@ -60,6 +74,18 @@ const routes: RouteObject[] = [
       { path: 'target-servers', element: <TargetServers /> },
       { path: 'kvms', element: <KeyValueMaps /> },
       { path: 'members', element: <Members /> },
+      { path: '*', element: <NotFound /> },
+    ],
+  },
+  {
+    path: '/portal/:org',
+    element: lazyPage(<PortalShell />),
+    children: [
+      { index: true, element: lazyPage(<PortalCatalog />) },
+      { path: 'apis/:api', element: lazyPage(<PortalApiDocs />) },
+      { path: 'mcp/:server', element: lazyPage(<PortalMcpServer />) },
+      { path: 'apps', element: lazyPage(<PortalApps />) },
+      { path: 'usage', element: lazyPage(<PortalUsage />) },
       { path: '*', element: <NotFound /> },
     ],
   },

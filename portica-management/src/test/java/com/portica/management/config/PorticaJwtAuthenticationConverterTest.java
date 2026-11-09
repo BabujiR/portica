@@ -40,11 +40,11 @@ class PorticaJwtAuthenticationConverterTest {
 
     @Test
     void platformAdminAuthorityUsesConfiguredRole() {
-        var props = new PorticaSecurityProperties("custom-admin", "custom-runtime", null);
+        var props = new PorticaSecurityProperties("custom-admin", "custom-runtime", null, null);
         assertThat(props.platformAdminAuthority()).isEqualTo("REALM_custom-admin");
         assertThat(props.runtimeAuthority()).isEqualTo("REALM_custom-runtime");
 
-        var defaults = new PorticaSecurityProperties(null, null, null);
+        var defaults = new PorticaSecurityProperties(null, null, null, null);
         assertThat(defaults.platformAdminAuthority()).isEqualTo("REALM_portica-platform-admin");
         assertThat(defaults.runtimeAuthority()).isEqualTo("REALM_portica-runtime");
     }

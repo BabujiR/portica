@@ -63,6 +63,32 @@ class RedisStoresTest {
     }
 
     @Test
+    void spikeArrestIsSharedByGatewayInstances() {
+        // 10 per second, burst 5: across two "gateways" hammering one key, only the burst gets through at once
+        RateLimiterStore gatewayA = new RedisRateLimiterStore(redis);
+        RateLimiterStore gatewayB = new RedisRateLimiterStore(redis);
+        String key = "spike:" + UUID.randomUUID();
+        List<RateLimiterStore.Decision> decisions = Flux.range(0, 40).parallel(8).runOn(Schedulers.parallel())
+                .flatMap(i -> (i % 2 == 0 ? gatewayA : gatewayB).acquire(key, 10, 5))
+                .sequential().collectList().block(Duration.ofSeconds(30));
+        long allowed = decisions.stream().filter(RateLimiterStore.Decision::allowed).count();
+        assertThat(allowed).isBetween(5L, 6L);   // the burst, plus at most one refilled while the calls ran
+        assertThat(decisions.stream().filter(d -> !d.allowed()).allMatch(d -> d.retryAfterMillis() > 0 && d.retryAfterMillis() <= 100))
+                .isTrue();
+        assertThat(redis.getExpire("portica:" + key).block(Duration.ofSeconds(5))).isNotNull();
+    }
+
+    @Test
+    void spikeArrestAllowsAgainAfterTheInterval() throws InterruptedException {
+        RateLimiterStore store = new RedisRateLimiterStore(redis);
+        String key = "spike:" + UUID.randomUUID();
+        assertThat(store.acquire(key, 20, 1).block().allowed()).isTrue();
+        assertThat(store.acquire(key, 20, 1).block().allowed()).isFalse();
+        Thread.sleep(60);
+        assertThat(store.acquire(key, 20, 1).block().allowed()).isTrue();
+    }
+
+    @Test
     void weightedIncrementsAddUp() {
         CounterStore store = new RedisCounterStore(redis);
         String key = "test:" + UUID.randomUUID();
